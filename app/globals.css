@@ -129,6 +129,13 @@ a {
   color: var(--ink-mute);
 }
 
+.nav-button {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+}
+
 .top-nav.on-dark {
   position: relative;
   min-height: 72px;
@@ -1225,6 +1232,10 @@ a {
   gap: 18px;
 }
 
+.form-grid.single {
+  grid-template-columns: 1fr;
+}
+
 .form-grid label:first-child {
   grid-column: 1 / -1;
 }
@@ -1343,6 +1354,51 @@ a {
   display: grid;
   gap: 14px;
   padding: 44px 0 88px;
+}
+
+.auth-wrap {
+  padding: 44px 0 88px;
+}
+
+.auth-panel {
+  display: grid;
+  gap: 22px;
+}
+
+.auth-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid var(--rule);
+  background: var(--cream-warm);
+}
+
+.auth-mode button {
+  min-height: 46px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: var(--ink-soft);
+  font-weight: 700;
+}
+
+.auth-mode button.selected {
+  background: var(--green);
+  color: #fff;
+}
+
+.auth-switch {
+  margin: 0;
+  color: var(--ink-mute);
+  text-align: center;
+}
+
+.auth-switch button {
+  border: 0;
+  background: transparent;
+  color: var(--green);
+  cursor: pointer;
+  font-weight: 700;
+  padding: 0;
 }
 
 .booking-row {

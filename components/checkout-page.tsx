@@ -70,8 +70,20 @@ export default function CheckoutPage() {
         contact: state.contact,
         players: state.players,
       };
-      const existing = JSON.parse(localStorage.getItem("bb:bookings") || "[]") as StoredBooking[];
-      localStorage.setItem("bb:bookings", JSON.stringify([booking, ...existing]));
+
+      const saveResponse = await fetch("/api/bookings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ booking }),
+      });
+      if (saveResponse.status === 401) {
+        router.push(`/login?returnTo=${encodeURIComponent(`/checkout/${batchId}`)}`);
+        return;
+      }
+      if (!saveResponse.ok) {
+        const body = (await saveResponse.json().catch(() => null)) as { message?: string } | null;
+        throw new Error(body?.message || "Bokningen kunde inte sparas.");
+      }
       setConfirmed(booking);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

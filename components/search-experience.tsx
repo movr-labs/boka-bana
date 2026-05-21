@@ -13,14 +13,6 @@ type Filters = {
   timeTo: string;
 };
 
-type CourtGroup = {
-  facilitySlug: string;
-  facilityName: string;
-  courtName: string;
-  surfaceName: string | null;
-  options: MatchiAvailabilityOption[];
-};
-
 type SportId = "1" | "5";
 
 type FacilityCard = {
@@ -135,25 +127,6 @@ function clubImageBackground(imageUrl: string | null) {
     imageUrl ||
     "https://images.unsplash.com/photo-1595435934249-5df7ed86e1c0?w=900&q=80&auto=format&fit=crop";
   return `linear-gradient(180deg, rgba(26, 77, 58, 0.05), rgba(26, 77, 58, 0.2)), url("${url}")`;
-}
-
-function groupByCourt(options: MatchiAvailabilityOption[]): CourtGroup[] {
-  const groups = new Map<string, CourtGroup>();
-  for (const option of options) {
-    const key = `${option.facilitySlug}:${option.courtName}`;
-    const current = groups.get(key) ?? {
-      facilitySlug: option.facilitySlug,
-      facilityName: option.facilityName,
-      courtName: option.courtName,
-      surfaceName: option.surfaceName,
-      options: [],
-    };
-    current.options.push(option);
-    groups.set(key, current);
-  }
-  return Array.from(groups.values()).sort((left, right) => {
-    return left.facilityName.localeCompare(right.facilityName) || left.courtName.localeCompare(right.courtName);
-  });
 }
 
 function matchesWindow(option: MatchiAvailabilityOption, filters: Filters) {
@@ -294,7 +267,6 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
     });
   }, [data, filters]);
 
-  const courtGroups = useMemo(() => groupByCourt(filteredOptions), [filteredOptions]);
   const facilityCards = useMemo<FacilityCard[]>(() => {
     if (!data) return [];
     return data.facilities.map((facility) => ({
@@ -789,27 +761,6 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
               <p>Justera datum, sport, plats eller filter.</p>
             </div>
           )}
-
-          {courtGroups.length > 0 ? (
-            <section id="courts" className="court-list">
-              {courtGroups.map((group) => (
-                <div key={`${group.facilitySlug}:${group.courtName}`} className="court-row">
-                  <div>
-                    <h4>{group.courtName}</h4>
-                    <p>{group.facilityName} · {group.surfaceName || "Underlag saknas"} · {group.options.length} tider</p>
-                  </div>
-                  <div className="slots">
-                    {group.options.slice(0, 12).map((slot) => (
-                      <button key={slot.slotId} className="slot-button compact" onClick={() => router.push(toBookingQuery(slot))}>
-                        <span>{slot.start}</span>
-                        <small>Pris</small>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </section>
-          ) : null}
         </div>
       </section>
     </main>

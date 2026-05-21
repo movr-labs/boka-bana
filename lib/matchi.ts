@@ -303,6 +303,32 @@ async function findMatchiFacilities(input: {
   offset: number;
   limit: number;
 }): Promise<FacilitySearchResult> {
+  const queries = buildFacilitySearchQueries(input.query);
+
+  for (const query of queries) {
+    const result = await fetchMatchiFacilitiesPage({
+      ...input,
+      query,
+    });
+    if (result.facilities.length || query === queries[queries.length - 1]) {
+      return result;
+    }
+  }
+
+  return {
+    facilities: [],
+    totalResults: 0,
+  };
+}
+
+async function fetchMatchiFacilitiesPage(input: {
+  query: string;
+  date: string;
+  sportId: string;
+  sportName: string;
+  offset: number;
+  limit: number;
+}): Promise<FacilitySearchResult> {
   const body = new URLSearchParams({
     lat: "",
     lng: "",
@@ -439,26 +465,26 @@ function parseAvailabilityHtml(
   },
 ): MatchiAvailabilityOption[] {
   const options: MatchiAvailabilityOption[] = [];
-  const itemPattern = /<li class="list-group-item">([\s\S]*?)<\/li>/gi;
+  const itemPattern = /<li\b[^>]*class="[^"]*\blist-group-item\b[^"]*"[^>]*>([\s\S]*?)<\/li>/gi;
 
   let match: RegExpExecArray | null;
   while ((match = itemPattern.exec(html)) !== null) {
     const block = match[1] ?? "";
-    if (!block.includes("/login/auth?returnUrl=")) continue;
+    if (!block.includes("/login/auth?returnUrl=") && !block.includes("/book/index?")) continue;
 
-    const courtName = cleanText(captureFirst(block, /<td width="45%">([\s\S]*?)<\/td>/i));
+    const courtName = cleanText(captureFirst(block, /<td\b[^>]*width=["']?45%["']?[^>]*>([\s\S]*?)<\/td>/i));
     const fallbackDuration = parseDurationMinutes(
-      captureFirst(block, /<td width="15%">\s*([^<]+?)\s*<\/td>/i) ?? "",
+      captureFirst(block, /<td\b[^>]*width=["']?15%["']?[^>]*>\s*([^<]+?)\s*<\/td>/i) ?? "",
     );
     const sportName =
       cleanText(
-        captureFirst(block, /<td width="20%">[\s\S]*?<div>\s*([^<]+?)\s*<\/div>/i),
+        captureFirst(block, /<td\b[^>]*width=["']?20%["']?[^>]*>[\s\S]*?<div>\s*([^<]+?)\s*<\/div>/i),
       ) || meta.sportName;
     const surfaceName =
       cleanText(
         captureFirst(
           block,
-          /<td width="20%">[\s\S]*?<div>\s*[^<]*?\s*<\/div>\s*<div><small>([\s\S]*?)<\/small><\/div>/i,
+          /<td\b[^>]*width=["']?20%["']?[^>]*>[\s\S]*?<div>\s*[^<]*?\s*<\/div>\s*<div><small>([\s\S]*?)<\/small><\/div>/i,
         ),
       ) || null;
     const href = decodeHtmlEntities(captureFirst(block, /<a[^>]*href="([^"]+)"/i) ?? "");
@@ -504,10 +530,10 @@ function extractBookingLink(
 ): { path: string; query: MatchiBookingQuery; slotId: string } | null {
   if (!href) return null;
   try {
-    const loginUrl = new URL(href, MATCHI_BASE_URL);
-    const returnUrl = loginUrl.searchParams.get("returnUrl") ?? "";
-    if (!returnUrl) return null;
-    const bookingUrl = new URL(returnUrl, MATCHI_BASE_URL);
+    const url = new URL(href, MATCHI_BASE_URL);
+    const returnUrl = url.searchParams.get("returnUrl");
+    const bookingUrl = returnUrl ? new URL(returnUrl, MATCHI_BASE_URL) : url;
+    if (!bookingUrl.pathname.includes("/book/index")) return null;
     const query: MatchiBookingQuery = {};
     for (const [key, value] of bookingUrl.searchParams.entries()) {
       query[key] = value;
@@ -554,6 +580,41 @@ function compareOptions(left: MatchiAvailabilityOption, right: MatchiAvailabilit
 function formatMatchiSearchDate(isoDate: string): string {
   const [year, month, day] = isoDate.split("-");
   return `${month}-${day}-${year}`;
+}
+
+function buildFacilitySearchQueries(query: string): string[] {
+  const trimmed = query.trim().replace(/\s+/g, " ");
+  if (!trimmed) return [""];
+
+  const variants = [trimmed];
+  const abbreviationVariant = trimmed
+    .replace(/\btennisklubb(?:en)?\b/gi, "TK")
+    .replace(/\btennis\s+klubb(?:en)?\b/gi, "TK")
+    .replace(/\bpadelklubb(?:en)?\b/gi, "PK")
+    .replace(/\bpadel\s+klubb(?:en)?\b/gi, "PK")
+    .replace(/\s+/g, " ")
+    .trim();
+  variants.push(abbreviationVariant);
+
+  const withoutClubWords = trimmed
+    .replace(
+      /\b(?:tennisklubb(?:en)?|tennis\s+klubb(?:en)?|padelklubb(?:en)?|padel\s+klubb(?:en)?|klubb(?:en)?|tennis|padel|tk|pk)\b/gi,
+      " ",
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+  variants.push(withoutClubWords);
+
+  const firstUsefulWord = withoutClubWords.split(" ").find((word) => normalizeSwedishText(word).length >= 3);
+  if (firstUsefulWord) variants.push(firstUsefulWord);
+
+  const seen = new Set<string>();
+  return variants.filter((variant) => {
+    const key = normalizeSwedishText(variant);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function parseTotalResults(html: string): number {

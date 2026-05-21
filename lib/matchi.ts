@@ -2,6 +2,8 @@ import type {
   AvailabilityResponse,
   MatchiAvailabilityOption,
   MatchiBookingQuery,
+  MatchiDirectoryBucket,
+  MatchiDirectorySummary,
   MatchiFacilityConfig,
   MatchiFacilitySummary,
 } from "@/lib/matchi-types";
@@ -10,11 +12,26 @@ const MATCHI_BASE_URL = "https://www.matchi.se";
 const MATCHI_TIME_ZONE = "Europe/Stockholm";
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 20;
+const DIRECTORY_PAGE_LIMIT = MAX_LIMIT;
+const MAX_DIRECTORY_PAGES = 30;
 
 const SPORTS = {
   "1": "Tennis",
   "5": "Padel",
 } as const;
+
+const DIRECTORY_CITY_NAMES = [
+  "Stockholm",
+  "Göteborg",
+  "Malmö",
+  "Uppsala",
+  "Linköping",
+  "Västerås",
+  "Lund",
+  "Helsingborg",
+  "Örebro",
+  "Umeå",
+];
 
 const FALLBACK_FACILITIES: MatchiFacilityConfig[] = [
   {
@@ -44,6 +61,37 @@ export function resolveSport(sportId?: string) {
   return {
     sportId: normalized,
     sportName: SPORTS[normalized],
+  };
+}
+
+export async function fetchMatchiDirectorySummary(input?: {
+  date?: string;
+  cities?: string[];
+}): Promise<MatchiDirectorySummary> {
+  const date = isIsoDate(input?.date) ? input.date : tomorrowISO();
+  const cityNames = input?.cities?.length ? input.cities : DIRECTORY_CITY_NAMES;
+  const fetchedAt = new Date().toISOString();
+  const sportEntries = Object.entries(SPORTS);
+  const sportFacilities = await Promise.all(
+    sportEntries.map(async ([sportId, sportName]) => {
+      const facilities = await fetchAllMatchiFacilities({
+        date,
+        sportId,
+        sportName,
+      });
+      return [sportId, facilities] as const;
+    }),
+  );
+
+  const bySport = Object.fromEntries(
+    sportFacilities.map(([sportId, facilities]) => [sportId, createDirectoryBucket(facilities, cityNames)]),
+  );
+  const combinedFacilities = sportFacilities.flatMap(([, facilities]) => facilities);
+
+  return {
+    ...createDirectoryBucket(combinedFacilities, cityNames),
+    bySport,
+    fetchedAt,
   };
 }
 
@@ -114,6 +162,83 @@ export async function fetchMatchiAvailability(input: {
     sportId,
     sportName,
     fetchedAt,
+  };
+}
+
+async function fetchAllMatchiFacilities(input: {
+  query?: string;
+  date: string;
+  sportId: string;
+  sportName: string;
+}): Promise<MatchiFacilitySummary[]> {
+  const facilities: MatchiFacilitySummary[] = [];
+  let offset = 0;
+  let expectedTotal = 0;
+
+  for (let page = 0; page < MAX_DIRECTORY_PAGES; page += 1) {
+    const result = await findMatchiFacilities({
+      query: input.query ?? "",
+      date: input.date,
+      sportId: input.sportId,
+      sportName: input.sportName,
+      offset,
+      limit: DIRECTORY_PAGE_LIMIT,
+    });
+
+    expectedTotal = Math.max(expectedTotal, result.totalResults);
+    facilities.push(...result.facilities);
+
+    if (!result.facilities.length || offset + DIRECTORY_PAGE_LIMIT >= expectedTotal) {
+      break;
+    }
+
+    offset += DIRECTORY_PAGE_LIMIT;
+  }
+
+  return facilities;
+}
+
+function createDirectoryBucket(
+  facilities: MatchiFacilitySummary[],
+  cityNames: string[],
+): MatchiDirectoryBucket {
+  const bySlug = new Map<
+    string,
+    {
+      facility: MatchiFacilitySummary;
+      courtCount: number;
+      cityKey: string;
+    }
+  >();
+
+  for (const facility of facilities) {
+    const current = bySlug.get(facility.slug);
+    if (current) {
+      current.courtCount += facility.bookableCourts ?? 0;
+      continue;
+    }
+
+    bySlug.set(facility.slug, {
+      facility,
+      courtCount: facility.bookableCourts ?? 0,
+      cityKey: normalizeSwedishText(facility.city),
+    });
+  }
+
+  const uniqueFacilities = Array.from(bySlug.values());
+  const totalCourts = uniqueFacilities.reduce((sum, item) => sum + item.courtCount, 0);
+
+  return {
+    totalClubs: uniqueFacilities.length,
+    totalCourts: totalCourts > 0 ? totalCourts : null,
+    cities: cityNames.map((name) => {
+      const cityKey = normalizeSwedishText(name);
+      return {
+        name,
+        query: name,
+        clubs: uniqueFacilities.filter((item) => item.cityKey.includes(cityKey)).length,
+      };
+    }),
   };
 }
 
@@ -408,6 +533,15 @@ export function isIsoDate(value: string | null | undefined): value is string {
   return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
 }
 
+function tomorrowISO() {
+  const date = new Date();
+  date.setDate(date.getDate() + 1);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function compareOptions(left: MatchiAvailabilityOption, right: MatchiAvailabilityOption) {
   return (
     left.date.localeCompare(right.date) ||
@@ -423,7 +557,14 @@ function formatMatchiSearchDate(isoDate: string): string {
 }
 
 function parseTotalResults(html: string): number {
-  return parsePositiveInt(captureFirst(html, /<span class="results-label">(\d+)\s+results<\/span>/i) ?? "") ?? 0;
+  return (
+    parsePositiveInt(
+      captureFirst(
+        html,
+        /<span[^>]*class="[^"]*\bresults-label\b[^"]*"[^>]*>\s*(\d+)\s+(?:result|results|träff|träffar)/i,
+      ) ?? "",
+    ) ?? 0
+  );
 }
 
 function normalizeImageUrl(raw?: string | null): string | null {
@@ -489,6 +630,14 @@ function cleanText(raw?: string | null): string {
   return decodeHtmlEntities(String(raw ?? ""))
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeSwedishText(value: string): string {
+  return value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
     .trim();
 }
 

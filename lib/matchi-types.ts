@@ -54,6 +54,23 @@ export type AvailabilityResponse = {
   fetchedAt: string;
 };
 
+export type MatchiDirectoryCitySummary = {
+  name: string;
+  clubs: number;
+  query: string;
+};
+
+export type MatchiDirectoryBucket = {
+  totalClubs: number;
+  totalCourts: number | null;
+  cities: MatchiDirectoryCitySummary[];
+};
+
+export type MatchiDirectorySummary = MatchiDirectoryBucket & {
+  bySport: Record<string, MatchiDirectoryBucket>;
+  fetchedAt: string;
+};
+
 export type MockQuoteItem = Pick<
   MatchiAvailabilityOption,
   | "facilitySlug"

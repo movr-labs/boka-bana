@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Calendar, Clock3, MapPin, Search, SlidersHorizontal } from "lucide-react";
+import { Calendar, CircleDot, Clock3, MapPin, Search, SlidersHorizontal } from "lucide-react";
 import BokaNav from "@/components/boka-nav";
 import type { AvailabilityResponse, MatchiAvailabilityOption, MatchiFacilitySummary } from "@/lib/matchi-types";
 
@@ -28,6 +28,23 @@ type FacilityCard = {
   options: MatchiAvailabilityOption[];
 };
 
+type DirectoryCitySummary = {
+  name: string;
+  clubs: number;
+  query: string;
+};
+
+type DirectoryBucket = {
+  totalClubs: number;
+  totalCourts: number | null;
+  cities: DirectoryCitySummary[];
+};
+
+type DirectorySummary = DirectoryBucket & {
+  bySport?: Record<string, DirectoryBucket>;
+  fetchedAt: string;
+};
+
 const DEFAULT_FILTERS: Filters = {
   surface: "any",
   priceMax: 420,
@@ -41,6 +58,58 @@ const SPORT_LABELS: Record<SportId, string> = {
   "1": "Tennis",
   "5": "Padel",
 };
+
+const FALLBACK_CITIES: DirectoryCitySummary[] = [
+  { name: "Stockholm", query: "Stockholm", clubs: 38 },
+  { name: "Göteborg", query: "Göteborg", clubs: 24 },
+  { name: "Malmö", query: "Malmö", clubs: 19 },
+  { name: "Uppsala", query: "Uppsala", clubs: 11 },
+  { name: "Linköping", query: "Linköping", clubs: 9 },
+  { name: "Västerås", query: "Västerås", clubs: 8 },
+  { name: "Lund", query: "Lund", clubs: 7 },
+  { name: "Helsingborg", query: "Helsingborg", clubs: 7 },
+  { name: "Örebro", query: "Örebro", clubs: 6 },
+  { name: "Umeå", query: "Umeå", clubs: 6 },
+];
+
+const FALLBACK_DIRECTORY: DirectoryBucket = {
+  totalClubs: 240,
+  totalCourts: 1600,
+  cities: FALLBACK_CITIES,
+};
+
+const FEATURED_CLUBS = [
+  {
+    name: "Kungsbacka Tennisklubb",
+    city: "Kungsbacka",
+    meta: "Tennis · Matchi",
+    searchQuery: "Kungsbacka Tennisklubb",
+    imageUrl: "https://static.wixstatic.com/media/d8dc73_bb2237b795f847dfb148db8644daeb23~mv2.jpg",
+    description: "En klassisk tennisklubb med både inomhusbanor och grusbanor nära Kungsmässan.",
+  },
+  {
+    name: "Gustavsbergs Tennisklubb",
+    city: "Gustavsberg",
+    meta: "Tennis · Värmdö",
+    searchQuery: "Gustavsbergs Tennisklubb",
+    imageUrl: "https://assets.matchi.se/archive/2019/05/thumb_3e1b8e56d8eaea2205392ff1aea28cf4.jpg",
+    description: "En av Värmdös stora tennisklubbar med inomhusbanor på Ekvallens idrottsområde.",
+  },
+  {
+    name: "Ekerö Tennisklubb",
+    city: "Ekerö",
+    meta: "Tennis · Ekebyhovshallen",
+    searchQuery: "Ekerö Tennisklubb",
+    imageUrl: "https://assets.matchi.se/archive/2015/03/thumb_3d0f47550a3093e937313cce16adbb36.jpg",
+    description: "En aktiv klubb i Ekebyhovshallen med tennis, pickleball, squash och juniorverksamhet.",
+  },
+];
+
+const MOCK_TOURNAMENTS = [
+  { id: "stockholm", name: "Stockholmsmästerskapen", date: "12-18 juni 2026", host: "Matchi-klubbar i Stockholm" },
+  { id: "padel", name: "Sommarpadelserien", date: "Juni-augusti 2026", host: "Utvalda padelhallar" },
+  { id: "skane", name: "Skånes Mästerskap", date: "20-24 juli 2026", host: "Malmö Tennisstadion" },
+];
 
 function isIsoDate(value: string | null | undefined): value is string {
   return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
@@ -72,6 +141,15 @@ function formatMoney(value: number) {
     currency: "SEK",
     maximumFractionDigits: 0,
   }).format(value);
+}
+
+function formatCount(value: number | null | undefined) {
+  if (value == null) return "-";
+  return new Intl.NumberFormat("sv-SE").format(value);
+}
+
+function directoryForSport(summary: DirectorySummary | null, sportId: SportId) {
+  return summary?.bySport?.[sportId] ?? summary ?? FALLBACK_DIRECTORY;
 }
 
 function clubImageBackground(imageUrl: string | null) {
@@ -128,6 +206,23 @@ function toBookingQuery(option: MatchiAvailabilityOption) {
   return `/booking?${search.toString()}`;
 }
 
+function filtersFromSearchParams(params: Pick<URLSearchParams, "get">): Filters {
+  const filters = { ...DEFAULT_FILTERS };
+  const time = params.get("time") || params.get("timeFrom");
+  const durationMinutes = Number(params.get("duration") || 0);
+  const hourMatch = time?.match(/^(\d{2})/);
+  const hour = hourMatch ? Number(hourMatch[1]) : null;
+
+  if (hour != null && Number.isFinite(hour) && hour >= 5 && hour <= 23) {
+    filters.timeFrom = String(hour).padStart(2, "0");
+    if (durationMinutes > 0) {
+      filters.timeTo = String(Math.min(23, hour + Math.max(1, Math.ceil(durationMinutes / 60)))).padStart(2, "0");
+    }
+  }
+
+  return filters;
+}
+
 export default function SearchExperience({ home = false }: { home?: boolean }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -136,13 +231,21 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
   const [location, setLocation] = useState(searchParams.get("location") || "");
   const [submittedQuery, setSubmittedQuery] = useState(searchParams.get("location") || "");
   const [sportId, setSportId] = useState<SportId>(searchParams.get("sport") === "5" ? "5" : "1");
+  const [time, setTime] = useState(searchParams.get("time") || "18:00");
+  const [duration, setDuration] = useState(searchParams.get("duration") || "60");
   const [offset, setOffset] = useState(Number(searchParams.get("offset") || 0));
-  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+  const [filters, setFilters] = useState<Filters>(() => filtersFromSearchParams(searchParams));
   const [data, setData] = useState<AvailabilityResponse | null>(null);
+  const [directorySummary, setDirectorySummary] = useState<DirectorySummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (home) {
+      setLoading(false);
+      return;
+    }
+
     const controller = new AbortController();
     setLoading(true);
     setError(null);
@@ -171,7 +274,28 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
       })
       .finally(() => setLoading(false));
     return () => controller.abort();
-  }, [date, offset, sportId, submittedQuery]);
+  }, [date, home, offset, sportId, submittedQuery]);
+
+  useEffect(() => {
+    if (!home) return;
+
+    const controller = new AbortController();
+    const params = new URLSearchParams({ date });
+    fetch(`/api/matchi/directory?${params.toString()}`, {
+      signal: controller.signal,
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`Kunde inte hämta katalog (${response.status})`);
+        return response.json() as Promise<DirectorySummary>;
+      })
+      .then(setDirectorySummary)
+      .catch((err) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+      });
+
+    return () => controller.abort();
+  }, [date, home]);
 
   const filteredOptions = useMemo(() => {
     if (!data) return [];
@@ -197,12 +321,14 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
   const pageEnd = data ? Math.min(data.offset + data.facilities.length, totalResults) : 0;
   const canPageBack = Boolean(data && data.offset > 0);
   const canPageForward = Boolean(data && data.offset + data.limit < totalResults);
+  const directory = useMemo(() => directoryForSport(directorySummary, sportId), [directorySummary, sportId]);
 
   function updateFilter<K extends keyof Filters>(key: K, value: Filters[K]) {
     setFilters((current) => ({ ...current, [key]: value }));
   }
 
-  function submitSearch() {
+  function submitSearch(event?: FormEvent<HTMLFormElement> | MouseEvent<HTMLButtonElement>) {
+    event?.preventDefault();
     setSubmittedQuery(location.trim());
     setOffset(0);
     router.push(buildSearchUrl({ nextOffset: 0, nextQuery: location.trim() }));
@@ -211,14 +337,18 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
   function updateSport(nextSportId: SportId) {
     setSportId(nextSportId);
     setOffset(0);
-    router.push(buildSearchUrl({ nextOffset: 0, nextSportId }));
+    if (!home) {
+      router.push(buildSearchUrl({ nextOffset: 0, nextSportId }));
+    }
   }
 
   function updateDate(nextDate: string) {
     const normalizedDate = isIsoDate(nextDate) ? nextDate : tomorrowISO();
     setDate(normalizedDate);
     setOffset(0);
-    router.push(buildSearchUrl({ nextDate: normalizedDate, nextOffset: 0 }));
+    if (!home) {
+      router.push(buildSearchUrl({ nextDate: normalizedDate, nextOffset: 0 }));
+    }
   }
 
   function goToOffset(nextOffset: number) {
@@ -229,18 +359,243 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
 
   function buildSearchUrl(input: {
     nextDate?: string;
+    nextDuration?: string;
     nextOffset?: number;
     nextQuery?: string;
     nextSportId?: SportId;
+    nextTime?: string;
   }) {
     const params = new URLSearchParams({
       date: input.nextDate ?? date,
       sport: input.nextSportId ?? sportId,
       offset: String(input.nextOffset ?? offset),
     });
+    params.set("time", input.nextTime ?? time);
+    params.set("duration", input.nextDuration ?? duration);
     const query = input.nextQuery ?? submittedQuery;
     if (query) params.set("location", query);
     return `/search?${params.toString()}`;
+  }
+
+  function searchForQuery(query: string) {
+    const nextQuery = query.trim();
+    setLocation(nextQuery);
+    setSubmittedQuery(nextQuery);
+    setOffset(0);
+    router.push(buildSearchUrl({ nextOffset: 0, nextQuery }));
+  }
+
+  if (home) {
+    return (
+      <main className="page-shell landing-page">
+        <section className="landing-hero">
+          <div className="landing-hero-photo" />
+          <div className="landing-hero-shade" />
+
+          <div className="container landing-nav-wrap">
+            <BokaNav current="home" variant="on-dark" />
+          </div>
+
+          <div className="container landing-hero-copy">
+            <p className="eyebrow light">
+              {SPORT_LABELS[sportId]} · {formatCount(directory.totalClubs)} klubbar ·{" "}
+              {formatCount(directory.totalCourts)} banor
+            </p>
+            <h1>
+              Banan väntar.
+              <br />
+              <em>Boka på två minuter.</em>
+            </h1>
+            <p>
+              En samlad plats för bokning av tennis- och padelbanor i hela landet med klubbarnas
+              riktiga priser och kalendrar.
+            </p>
+          </div>
+
+          <div className="container landing-search-wrap">
+            <form className="landing-search-panel" onSubmit={submitSearch}>
+              <div className="landing-search-top">
+                <div className="sport-toggle" aria-label="Sport">
+                  <button
+                    className={sportId === "1" ? "selected" : ""}
+                    onClick={() => updateSport("1")}
+                    type="button"
+                  >
+                    Tennis
+                  </button>
+                  <button
+                    className={sportId === "5" ? "selected" : ""}
+                    onClick={() => updateSport("5")}
+                    type="button"
+                  >
+                    Padel
+                  </button>
+                </div>
+                <div className="eyebrow">Lediga tider i realtid</div>
+              </div>
+
+              <div className="landing-search-grid" role="search">
+                <LandingField label="Plats" icon={<MapPin size={18} />}>
+                  <input
+                    value={location}
+                    onChange={(event) => setLocation(event.target.value)}
+                    placeholder="Stad eller klubbnamn"
+                  />
+                </LandingField>
+                <LandingField label="Datum" icon={<Calendar size={18} />}>
+                  <input type="date" value={date} onChange={(event) => updateDate(event.target.value)} />
+                </LandingField>
+                <LandingField label="Tid" icon={<Clock3 size={18} />}>
+                  <input type="time" value={time} onChange={(event) => setTime(event.target.value)} />
+                </LandingField>
+                <LandingField label="Längd" icon={<CircleDot size={18} />}>
+                  <select value={duration} onChange={(event) => setDuration(event.target.value)}>
+                    <option value="60">60 min</option>
+                    <option value="90">90 min</option>
+                    <option value="120">120 min</option>
+                  </select>
+                </LandingField>
+                <button className="btn dark landing-search-button" type="submit">
+                  <Search size={16} />
+                  Sök
+                </button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <section className="landing-section">
+          <div className="container">
+            <div className="landing-section-head">
+              <div>
+                <p className="eyebrow">Utvalda klubbar</p>
+                <h2>Anrika anläggningar &amp; nya favoriter</h2>
+              </div>
+              <button className="btn ghost small" type="button" onClick={() => searchForQuery("")}>
+                Se alla klubbar
+              </button>
+            </div>
+
+            <div className="featured-grid">
+              {FEATURED_CLUBS.map((club) => (
+                <button
+                  className="featured-card"
+                  key={club.name}
+                  onClick={() => searchForQuery(club.searchQuery)}
+                  type="button"
+                >
+                  <div className="featured-card-image" style={{ backgroundImage: `url("${club.imageUrl}")` }}>
+                    <span>{club.meta}</span>
+                  </div>
+                  <div className="featured-card-body">
+                    <p className="eyebrow">{club.city}</p>
+                    <h3>{club.name}</h3>
+                    <p>{club.description}</p>
+                    <div className="featured-card-foot">
+                      <span>Sök klubbnamn</span>
+                      <strong>Visa tider</strong>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="landing-section city-section">
+          <div className="container">
+            <div className="landing-section-head compact">
+              <div>
+                <p className="eyebrow">Spela i</p>
+                <h2>Hela Sverige, en katalog</h2>
+              </div>
+            </div>
+
+            <div className="city-grid">
+              {directory.cities.map((city) => (
+                <button className="city-button" key={city.name} onClick={() => searchForQuery(city.query)} type="button">
+                  <span>{city.name}</span>
+                  <small>{formatCount(city.clubs)} klubbar</small>
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="landing-section about-section">
+          <div className="container about-grid">
+            <div className="about-image">
+              <div className="about-stamp">
+                <p className="eyebrow light">Sedan 2024</p>
+                <strong>Klubbarna äger sina tider - vi är logistiken.</strong>
+              </div>
+            </div>
+
+            <div className="about-copy">
+              <p className="eyebrow">Om Bokabana</p>
+              <h2>
+                En samlad bokning,
+                <br />
+                <em>byggd kring klubbarna.</em>
+              </h2>
+              <p>
+                Bokabana är inte en marknadsplats. Det är klubbarnas eget bokningssystem,
+                tillgängligt under ett tak. Du ser klubbens egna priser och regler utan påslag,
+                utan mellanhand.
+              </p>
+              <div className="about-stats">
+                <div>
+                  <strong>{formatCount(directory.totalClubs)}</strong>
+                  <span>Klubbar</span>
+                </div>
+                <div>
+                  <strong>{formatCount(directory.totalCourts)}</strong>
+                  <span>Banor</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="landing-section tournament-section">
+          <div className="container">
+            <div className="landing-section-head">
+              <div>
+                <p className="eyebrow light">Sommarsäsongen 2026</p>
+                <h2>Tävlingar &amp; serier</h2>
+              </div>
+              <button className="btn ghost-light small" type="button">
+                Hela kalendern
+              </button>
+            </div>
+
+            <div className="tournament-list">
+              {MOCK_TOURNAMENTS.map((event, index) => (
+                <div className="tournament-row" key={event.id}>
+                  <span className="eyebrow light">{String(index + 1).padStart(2, "0")}</span>
+                  <strong>{event.name}</strong>
+                  <span>{event.date}</span>
+                  <span>
+                    <small>Värdklubb</small>
+                    {event.host}
+                  </span>
+                  <button className="btn ghost-light small" type="button">
+                    Anmäl
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <footer className="landing-footer">
+          <div className="container">
+            <strong>Bokabana</strong>
+            <span>Sveriges samlade plats för tennis- och padelbokningar.</span>
+          </div>
+        </footer>
+      </main>
+    );
   }
 
   return (
@@ -503,5 +858,17 @@ function RadioOption({ label, active, onClick }: { label: string; active: boolea
       <span />
       {label}
     </button>
+  );
+}
+
+function LandingField({ label, icon, children }: { label: string; icon: ReactNode; children: ReactNode }) {
+  return (
+    <label className="landing-field">
+      <span>{icon}</span>
+      <span className="landing-field-body">
+        <span className="eyebrow">{label}</span>
+        {children}
+      </span>
+    </label>
   );
 }

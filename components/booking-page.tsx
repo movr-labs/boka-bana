@@ -14,12 +14,19 @@ function formatMoney(value: number) {
   }).format(value);
 }
 
+function isIsoDate(value: string | null | undefined): value is string {
+  return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
+}
+
 function formatDate(iso: string) {
+  if (!isIsoDate(iso)) return "Valt datum";
+  const date = new Date(`${iso}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return "Valt datum";
   return new Intl.DateTimeFormat("sv-SE", {
     weekday: "long",
     day: "numeric",
     month: "long",
-  }).format(new Date(`${iso}T00:00:00`));
+  }).format(date);
 }
 
 function itemFromParams(params: URLSearchParams): MockQuoteItem | null {
@@ -27,7 +34,7 @@ function itemFromParams(params: URLSearchParams): MockQuoteItem | null {
   const start = params.get("start") ?? "";
   const end = params.get("end") ?? "";
   const slotId = params.get("slotId") ?? "";
-  if (!date || !start || !end || !slotId) return null;
+  if (!isIsoDate(date) || !start || !end || !slotId) return null;
 
   const bookingQuery: Record<string, string> = {};
   params.forEach((value, key) => {

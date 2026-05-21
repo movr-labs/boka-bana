@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Calendar, Clock3, MapPin, Search, SlidersHorizontal } from "lucide-react";
 import BokaNav from "@/components/boka-nav";
-import type { AvailabilityResponse, MatchiAvailabilityOption } from "@/lib/matchi-types";
+import type { AvailabilityResponse, MatchiAvailabilityOption, MatchiFacilitySummary } from "@/lib/matchi-types";
 
 type Filters = {
   surface: string;
@@ -14,8 +14,17 @@ type Filters = {
 };
 
 type CourtGroup = {
+  facilitySlug: string;
+  facilityName: string;
   courtName: string;
   surfaceName: string | null;
+  options: MatchiAvailabilityOption[];
+};
+
+type SportId = "1" | "5";
+
+type FacilityCard = {
+  facility: MatchiFacilitySummary;
   options: MatchiAvailabilityOption[];
 };
 
@@ -25,6 +34,17 @@ const DEFAULT_FILTERS: Filters = {
   timeFrom: "06",
   timeTo: "22",
 };
+
+const PAGE_SIZE = 10;
+
+const SPORT_LABELS: Record<SportId, string> = {
+  "1": "Tennis",
+  "5": "Padel",
+};
+
+function isIsoDate(value: string | null | undefined): value is string {
+  return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
+}
 
 function tomorrowISO() {
   const date = new Date();
@@ -36,11 +56,14 @@ function tomorrowISO() {
 }
 
 function formatDateLong(iso: string) {
+  if (!isIsoDate(iso)) return "valt datum";
+  const date = new Date(`${iso}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return "valt datum";
   return new Intl.DateTimeFormat("sv-SE", {
     weekday: "long",
     day: "numeric",
     month: "long",
-  }).format(new Date(`${iso}T00:00:00`));
+  }).format(date);
 }
 
 function formatMoney(value: number) {
@@ -51,18 +74,30 @@ function formatMoney(value: number) {
   }).format(value);
 }
 
+function clubImageBackground(imageUrl: string | null) {
+  const url =
+    imageUrl ||
+    "https://images.unsplash.com/photo-1595435934249-5df7ed86e1c0?w=900&q=80&auto=format&fit=crop";
+  return `linear-gradient(180deg, rgba(26, 77, 58, 0.05), rgba(26, 77, 58, 0.2)), url("${url}")`;
+}
+
 function groupByCourt(options: MatchiAvailabilityOption[]): CourtGroup[] {
   const groups = new Map<string, CourtGroup>();
   for (const option of options) {
-    const current = groups.get(option.courtName) ?? {
+    const key = `${option.facilitySlug}:${option.courtName}`;
+    const current = groups.get(key) ?? {
+      facilitySlug: option.facilitySlug,
+      facilityName: option.facilityName,
       courtName: option.courtName,
       surfaceName: option.surfaceName,
       options: [],
     };
     current.options.push(option);
-    groups.set(option.courtName, current);
+    groups.set(key, current);
   }
-  return Array.from(groups.values()).sort((left, right) => left.courtName.localeCompare(right.courtName));
+  return Array.from(groups.values()).sort((left, right) => {
+    return left.facilityName.localeCompare(right.facilityName) || left.courtName.localeCompare(right.courtName);
+  });
 }
 
 function matchesWindow(option: MatchiAvailabilityOption, filters: Filters) {
@@ -96,8 +131,12 @@ function toBookingQuery(option: MatchiAvailabilityOption) {
 export default function SearchExperience({ home = false }: { home?: boolean }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [date, setDate] = useState(searchParams.get("date") || tomorrowISO());
-  const [location, setLocation] = useState(searchParams.get("location") || "Kungsbacka");
+  const initialDate = searchParams.get("date");
+  const [date, setDate] = useState(isIsoDate(initialDate) ? initialDate : tomorrowISO());
+  const [location, setLocation] = useState(searchParams.get("location") || "");
+  const [submittedQuery, setSubmittedQuery] = useState(searchParams.get("location") || "");
+  const [sportId, setSportId] = useState<SportId>(searchParams.get("sport") === "5" ? "5" : "1");
+  const [offset, setOffset] = useState(Number(searchParams.get("offset") || 0));
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [data, setData] = useState<AvailabilityResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -107,7 +146,14 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
-    fetch(`/api/matchi/availability?date=${encodeURIComponent(date)}&facility=kungsbackatk&sport=1`, {
+    const params = new URLSearchParams({
+      date,
+      q: submittedQuery,
+      sport: sportId,
+      offset: String(offset),
+      limit: String(PAGE_SIZE),
+    });
+    fetch(`/api/matchi/availability?${params.toString()}`, {
       signal: controller.signal,
       cache: "no-store",
     })
@@ -125,17 +171,10 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
       })
       .finally(() => setLoading(false));
     return () => controller.abort();
-  }, [date]);
-
-  const locationMatches = useMemo(() => {
-    const needle = location.trim().toLowerCase();
-    if (!needle) return true;
-    const haystack = `${data?.facility.name ?? "Kungsbacka Tennisklubb"} Kungsbacka tennis`.toLowerCase();
-    return haystack.includes(needle);
-  }, [data?.facility.name, location]);
+  }, [date, offset, sportId, submittedQuery]);
 
   const filteredOptions = useMemo(() => {
-    if (!data || !locationMatches) return [];
+    if (!data) return [];
     return data.options.filter((option) => {
       if (filters.surface !== "any") {
         const surface = (option.surfaceName ?? "").toLowerCase();
@@ -143,18 +182,65 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
       }
       return matchesWindow(option, filters);
     });
-  }, [data, filters, locationMatches]);
+  }, [data, filters]);
 
   const courtGroups = useMemo(() => groupByCourt(filteredOptions), [filteredOptions]);
-  const priceFrom = filteredOptions.length ? Math.min(...filteredOptions.map((slot) => slot.mockPrice)) : null;
-  const firstSlots = courtGroups.flatMap((group) => group.options.slice(0, 8)).slice(0, 10);
+  const facilityCards = useMemo<FacilityCard[]>(() => {
+    if (!data) return [];
+    return data.facilities.map((facility) => ({
+      facility,
+      options: filteredOptions.filter((option) => option.facilitySlug === facility.slug),
+    }));
+  }, [data, filteredOptions]);
+  const totalResults = data?.totalResults ?? 0;
+  const pageStart = totalResults && data ? data.offset + 1 : 0;
+  const pageEnd = data ? Math.min(data.offset + data.facilities.length, totalResults) : 0;
+  const canPageBack = Boolean(data && data.offset > 0);
+  const canPageForward = Boolean(data && data.offset + data.limit < totalResults);
 
   function updateFilter<K extends keyof Filters>(key: K, value: Filters[K]) {
     setFilters((current) => ({ ...current, [key]: value }));
   }
 
   function submitSearch() {
-    router.push(`/search?location=${encodeURIComponent(location)}&date=${encodeURIComponent(date)}`);
+    setSubmittedQuery(location.trim());
+    setOffset(0);
+    router.push(buildSearchUrl({ nextOffset: 0, nextQuery: location.trim() }));
+  }
+
+  function updateSport(nextSportId: SportId) {
+    setSportId(nextSportId);
+    setOffset(0);
+    router.push(buildSearchUrl({ nextOffset: 0, nextSportId }));
+  }
+
+  function updateDate(nextDate: string) {
+    const normalizedDate = isIsoDate(nextDate) ? nextDate : tomorrowISO();
+    setDate(normalizedDate);
+    setOffset(0);
+    router.push(buildSearchUrl({ nextDate: normalizedDate, nextOffset: 0 }));
+  }
+
+  function goToOffset(nextOffset: number) {
+    const normalized = Math.max(0, nextOffset);
+    setOffset(normalized);
+    router.push(buildSearchUrl({ nextOffset: normalized, nextQuery: submittedQuery }));
+  }
+
+  function buildSearchUrl(input: {
+    nextDate?: string;
+    nextOffset?: number;
+    nextQuery?: string;
+    nextSportId?: SportId;
+  }) {
+    const params = new URLSearchParams({
+      date: input.nextDate ?? date,
+      sport: input.nextSportId ?? sportId,
+      offset: String(input.nextOffset ?? offset),
+    });
+    const query = input.nextQuery ?? submittedQuery;
+    if (query) params.set("location", query);
+    return `/search?${params.toString()}`;
   }
 
   return (
@@ -170,11 +256,15 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
             <div className="hero-panel" role="search">
               <div className="field">
                 <MapPin size={18} />
-                <input value={location} onChange={(event) => setLocation(event.target.value)} />
+                <input
+                  value={location}
+                  onChange={(event) => setLocation(event.target.value)}
+                  placeholder="Sök klubb eller stad"
+                />
               </div>
               <div className="field compact">
                 <Calendar size={18} />
-                <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+                <input type="date" value={date} onChange={(event) => updateDate(event.target.value)} />
               </div>
               <button className="btn dark" onClick={submitSearch}>
                 <Search size={16} />
@@ -187,17 +277,25 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
         <section className="compact-search">
           <div className="container search-row">
             <div className="sport-toggle" aria-label="Sport">
-              <button className="selected">Tennis</button>
-              <button disabled>Padel</button>
+              <button className={sportId === "1" ? "selected" : ""} onClick={() => updateSport("1")} type="button">
+                Tennis
+              </button>
+              <button className={sportId === "5" ? "selected" : ""} onClick={() => updateSport("5")} type="button">
+                Padel
+              </button>
             </div>
             <div className="search-box">
               <div className="field">
                 <MapPin size={17} />
-                <input value={location} onChange={(event) => setLocation(event.target.value)} />
+                <input
+                  value={location}
+                  onChange={(event) => setLocation(event.target.value)}
+                  placeholder="Sök klubb eller stad"
+                />
               </div>
               <div className="field compact">
                 <Calendar size={17} />
-                <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+                <input type="date" value={date} onChange={(event) => updateDate(event.target.value)} />
               </div>
             </div>
             <button className="btn small" onClick={submitSearch}>
@@ -256,13 +354,19 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
           <div className="results-head">
             <div>
               <h2>
-                {loading ? "Hämtar lediga tider" : `${locationMatches && data ? 1 : 0} klubb · ${formatDateLong(date)}`}
+                {loading
+                  ? "Hämtar lediga tider"
+                  : `${pageStart ? `${pageStart}-${pageEnd} av ${totalResults}` : "0"} klubbar · ${formatDateLong(date)}`}
               </h2>
-              <p>{data ? `Realtider från ${data.facility.name}` : "Matchi-anslutna tider"}</p>
+              <p>
+                {data
+                  ? `${SPORT_LABELS[sportId]} från Matchi${submittedQuery ? ` · ${submittedQuery}` : ""}`
+                  : "Matchi-anslutna tider"}
+              </p>
             </div>
             <div className="sort-pill">
               <SlidersHorizontal size={14} />
-              Tidigast först
+              Sida {data ? Math.floor(data.offset / data.limit) + 1 : 1}
             </div>
           </div>
 
@@ -277,57 +381,94 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
                 <span />
               </div>
             </div>
-          ) : data && locationMatches && filteredOptions.length > 0 ? (
-            <article className="result-card">
-              <button className="club-image" onClick={() => router.push("#courts")} aria-label={data.facility.name} />
-              <div className="club-body">
-                <div className="club-top">
-                  <div>
-                    <p className="eyebrow">Kungsbacka · Matchi · {data.facility.facilityId}</p>
-                    <h3>{data.facility.name}</h3>
-                    <div className="chips">
-                      <span className="chip"><span />tennis</span>
-                      <span className="chip">Matchi</span>
-                      <span className="chip">{courtGroups.length} banor med tider</span>
-                    </div>
-                  </div>
-                  <div className="price-block">
-                    <span>Från</span>
-                    <strong>{priceFrom ? formatMoney(priceFrom) : "-"}</strong>
-                    <small>{filteredOptions.length} tider</small>
-                  </div>
-                </div>
+          ) : facilityCards.length > 0 ? (
+            <>
+              <div className="result-stack">
+                {facilityCards.map(({ facility, options }) => {
+                  const facilityPriceFrom = options.length ? Math.min(...options.map((slot) => slot.mockPrice)) : null;
+                  const facilityCourtCount = new Set(options.map((slot) => slot.courtName)).size;
+                  return (
+                    <article className="result-card" key={`${facility.sportId}:${facility.slug}`}>
+                      <button
+                        className="club-image"
+                        onClick={() => router.push("#courts")}
+                        aria-label={facility.name}
+                        style={{ backgroundImage: clubImageBackground(facility.imageUrl) }}
+                      />
+                      <div className="club-body">
+                        <div className="club-top">
+                          <div>
+                            <p className="eyebrow">
+                              {facility.city || "Matchi"} · Matchi · {facility.facilityId}
+                            </p>
+                            <h3>{facility.name}</h3>
+                            <div className="chips">
+                              <span className="chip"><span />{facility.sportName.toLowerCase()}</span>
+                              <span className="chip">Matchi</span>
+                              <span className="chip">
+                                {facility.bookableCourts ?? facilityCourtCount} bokningsbara banor
+                              </span>
+                            </div>
+                          </div>
+                          <div className="price-block">
+                            <span>Från</span>
+                            <strong>{facilityPriceFrom ? formatMoney(facilityPriceFrom) : "-"}</strong>
+                            <small>{options.length} tider</small>
+                          </div>
+                        </div>
 
-                <div className="slots-strip">
-                  <div className="slots-head">
-                    <span>Lediga tider</span>
-                    <a href="#courts">Se hela schemat</a>
-                  </div>
-                  <div className="slots">
-                    {firstSlots.map((slot) => (
-                      <button key={slot.slotId} className="slot-button" onClick={() => router.push(toBookingQuery(slot))}>
-                        <span>{slot.start}</span>
-                        <small>{formatMoney(slot.mockPrice)}</small>
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                        <div className="slots-strip">
+                          <div className="slots-head">
+                            <span>Lediga tider</span>
+                            {options.length ? <a href="#courts">Se schemat</a> : null}
+                          </div>
+                          {options.length ? (
+                            <div className="slots">
+                              {options.slice(0, 10).map((slot) => (
+                                <button key={slot.slotId} className="slot-button" onClick={() => router.push(toBookingQuery(slot))}>
+                                  <span>{slot.start}</span>
+                                  <small>{formatMoney(slot.mockPrice)}</small>
+                                </button>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="no-slots">Inga lediga tider i valt filter.</div>
+                          )}
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
-            </article>
+
+              {data ? (
+                <div className="pagination-row">
+                  <button className="btn ghost small" disabled={!canPageBack} onClick={() => goToOffset(data.offset - data.limit)}>
+                    Föregående
+                  </button>
+                  <span>
+                    Visar {pageStart}-{pageEnd} av {totalResults}
+                  </span>
+                  <button className="btn small" disabled={!canPageForward} onClick={() => goToOffset(data.offset + data.limit)}>
+                    Nästa
+                  </button>
+                </div>
+              ) : null}
+            </>
           ) : (
             <div className="empty-state">
               <h3>Inga tider matchar</h3>
-              <p>Justera datum, plats eller filter.</p>
+              <p>Justera datum, sport, plats eller filter.</p>
             </div>
           )}
 
           {courtGroups.length > 0 ? (
             <section id="courts" className="court-list">
               {courtGroups.map((group) => (
-                <div key={group.courtName} className="court-row">
+                <div key={`${group.facilitySlug}:${group.courtName}`} className="court-row">
                   <div>
                     <h4>{group.courtName}</h4>
-                    <p>{group.surfaceName || "Underlag saknas"} · {group.options.length} tider</p>
+                    <p>{group.facilityName} · {group.surfaceName || "Underlag saknas"} · {group.options.length} tider</p>
                   </div>
                   <div className="slots">
                     {group.options.slice(0, 12).map((slot) => (

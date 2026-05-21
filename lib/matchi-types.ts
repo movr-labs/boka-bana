@@ -11,6 +11,17 @@ export type MatchiFacility = MatchiFacilityConfig & {
   facilityId: string;
 };
 
+export type MatchiFacilitySummary = {
+  slug: string;
+  facilityId: string;
+  name: string;
+  city: string;
+  imageUrl: string | null;
+  sportId: string;
+  sportName: string;
+  bookableCourts: number | null;
+};
+
 export type MatchiAvailabilityOption = {
   facilitySlug: string;
   facilityId: string;
@@ -31,8 +42,15 @@ export type MatchiAvailabilityOption = {
 };
 
 export type AvailabilityResponse = {
-  facility: MatchiFacility;
+  facility?: MatchiFacility;
+  facilities: MatchiFacilitySummary[];
   options: MatchiAvailabilityOption[];
+  totalResults: number;
+  offset: number;
+  limit: number;
+  query: string;
+  sportId: string;
+  sportName: string;
   fetchedAt: string;
 };
 

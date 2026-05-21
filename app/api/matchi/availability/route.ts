@@ -15,15 +15,18 @@ function tomorrowISO() {
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const date = url.searchParams.get("date") || tomorrowISO();
-  const facilitySlug = url.searchParams.get("facility") || "kungsbackatk";
+  const facilitySlug = url.searchParams.get("facility") || undefined;
+  const query = url.searchParams.get("q") || "";
   const sportId = url.searchParams.get("sport") || "1";
+  const offset = Number(url.searchParams.get("offset") || 0);
+  const limit = Number(url.searchParams.get("limit") || 10);
 
   if (!isIsoDate(date)) {
     return NextResponse.json({ message: "Invalid date" }, { status: 400 });
   }
 
   try {
-    const payload = await fetchMatchiAvailability({ facilitySlug, date, sportId });
+    const payload = await fetchMatchiAvailability({ facilitySlug, query, date, sportId, offset, limit });
     return NextResponse.json(payload, {
       headers: {
         "Cache-Control": "no-store",

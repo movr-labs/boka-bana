@@ -1,7 +1,8 @@
-import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import type { MockQuote, MockQuoteItem } from "@/lib/matchi-types";
 import { calculateMockPrice, isIsoDate } from "@/lib/matchi";
+import { createQuotedBatch, quoteMatchiItem, toPublicQuote } from "@/lib/matchi-checkout";
+import { saveMatchiCheckoutBatch } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 
@@ -53,20 +54,11 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json()) as { item?: unknown };
     const item = normalizeItem(body.item);
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-    const quote: MockQuote = {
-      batchId: `mock_${randomUUID()}`,
-      status: "quoted",
-      currency: "SEK",
-      totalPrice: item.mockPrice,
-      methods: ["Mock card", "Klubbkredit"],
-      expiresAt,
-      items: [item],
-      checkoutMode: "mock",
-    };
-    return NextResponse.json(quote);
+    const quote = await quoteMatchiItem(item);
+    const batch = await saveMatchiCheckoutBatch(createQuotedBatch(item, quote));
+    return NextResponse.json(toPublicQuote(batch) satisfies MockQuote);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not create mock quote";
+    const message = error instanceof Error ? error.message : "Kunde inte skapa Matchi-offert";
     return NextResponse.json({ message }, { status: 400 });
   }
 }

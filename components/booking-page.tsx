@@ -87,7 +87,7 @@ export default function BookingPage() {
       });
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as { message?: string } | null;
-        throw new Error(body?.message || `Kunde inte skapa mockoffert (${response.status})`);
+        throw new Error(body?.message || `Kunde inte skapa Matchi-offert (${response.status})`);
       }
       const quote = (await response.json()) as MockQuote;
       localStorage.setItem(
@@ -183,7 +183,7 @@ export default function BookingPage() {
 
           <div className="mock-callout">
             <ShieldCheck size={18} />
-            <span>Checkout simuleras lokalt. Matchi får ingen boknings- eller betalningsbegäran.</span>
+            <span>Offerten låses kort inför Matchi checkout och valideras igen innan betalning.</span>
           </div>
         </section>
 
@@ -209,12 +209,12 @@ export default function BookingPage() {
             </span>
           </div>
           <div className="total-row">
-            <span>Mockpris</span>
+            <span>Pris</span>
             <strong>{formatMoney(item.mockPrice)}</strong>
           </div>
           {error ? <div className="notice error">{error}</div> : null}
           <button className="btn full dark" disabled={loading} type="submit">
-            {loading ? "Skapar checkout..." : "Fortsätt till mock checkout"}
+            {loading ? "Skapar checkout..." : "Fortsätt till checkout"}
           </button>
         </aside>
       </form>

@@ -1,5 +1,7 @@
 import { randomUUID } from "crypto";
-import type { StoredBooking } from "@/lib/matchi-types";
+import { mkdir, readFile, writeFile } from "fs/promises";
+import path from "path";
+import type { MatchiStoredCheckoutBatch, StoredBooking } from "@/lib/matchi-types";
 
 export type AppUser = {
   id: string;
@@ -13,12 +15,14 @@ type DatabaseShape = {
   usersById: Record<string, AppUser>;
   userIdsByEmail: Record<string, string>;
   bookingsByUserId: Record<string, StoredBooking[]>;
+  matchiCheckoutBatchesById: Record<string, MatchiStoredCheckoutBatch>;
 };
 
 const EMPTY_DATABASE: DatabaseShape = {
   usersById: {},
   userIdsByEmail: {},
   bookingsByUserId: {},
+  matchiCheckoutBatchesById: {},
 };
 
 type Store = {
@@ -28,10 +32,20 @@ type Store = {
 
 declare global {
   var bokaBanaMemoryDatabase: DatabaseShape | undefined;
+  var bokaBanaFileStoreWriteQueue: Promise<void> | undefined;
 }
 
 function cloneDatabase(database: DatabaseShape): DatabaseShape {
   return JSON.parse(JSON.stringify(database)) as DatabaseShape;
+}
+
+function normalizeDatabase(input: Partial<DatabaseShape> | null | undefined): DatabaseShape {
+  return {
+    usersById: input?.usersById ?? {},
+    userIdsByEmail: input?.userIdsByEmail ?? {},
+    bookingsByUserId: input?.bookingsByUserId ?? {},
+    matchiCheckoutBatchesById: input?.matchiCheckoutBatchesById ?? {},
+  };
 }
 
 function normalizeEmail(email: string) {
@@ -44,11 +58,15 @@ function getKvConfig() {
   return url && token ? { url: url.replace(/\/$/, ""), token } : null;
 }
 
+function shouldRequirePersistentStore() {
+  return process.env.VERCEL === "1" || process.env.VERCEL_ENV === "production";
+}
+
 function createMemoryStore(): Store {
   globalThis.bokaBanaMemoryDatabase ??= cloneDatabase(EMPTY_DATABASE);
   return {
     async read() {
-      return cloneDatabase(globalThis.bokaBanaMemoryDatabase ?? EMPTY_DATABASE);
+      return normalizeDatabase(cloneDatabase(globalThis.bokaBanaMemoryDatabase ?? EMPTY_DATABASE));
     },
     async write(database) {
       globalThis.bokaBanaMemoryDatabase = cloneDatabase(database);
@@ -79,7 +97,7 @@ function createKvStore(config: { url: string; token: string }): Store {
   return {
     async read() {
       const result = await command<string | null>(["GET", key]);
-      return result ? (JSON.parse(result) as DatabaseShape) : cloneDatabase(EMPTY_DATABASE);
+      return result ? normalizeDatabase(JSON.parse(result) as Partial<DatabaseShape>) : cloneDatabase(EMPTY_DATABASE);
     },
     async write(database) {
       await command(["SET", key, JSON.stringify(database)]);
@@ -87,9 +105,43 @@ function createKvStore(config: { url: string; token: string }): Store {
   };
 }
 
+function createFileStore(): Store {
+  const filePath = path.join(process.cwd(), ".data", "bokabana-database.json");
+
+  async function readFromDisk() {
+    try {
+      const raw = await readFile(filePath, "utf8");
+      return normalizeDatabase(JSON.parse(raw) as Partial<DatabaseShape>);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOENT") return cloneDatabase(EMPTY_DATABASE);
+      throw error;
+    }
+  }
+
+  return {
+    async read() {
+      await (globalThis.bokaBanaFileStoreWriteQueue ?? Promise.resolve());
+      return readFromDisk();
+    },
+    async write(database) {
+      const writeTask = async () => {
+        await mkdir(path.dirname(filePath), { recursive: true });
+        await writeFile(filePath, JSON.stringify(normalizeDatabase(database), null, 2), "utf8");
+      };
+      globalThis.bokaBanaFileStoreWriteQueue = (globalThis.bokaBanaFileStoreWriteQueue ?? Promise.resolve()).then(writeTask);
+      await globalThis.bokaBanaFileStoreWriteQueue;
+    },
+  };
+}
+
 function getStore() {
   const kvConfig = getKvConfig();
-  return kvConfig ? createKvStore(kvConfig) : createMemoryStore();
+  if (kvConfig) return createKvStore(kvConfig);
+  if (shouldRequirePersistentStore()) {
+    throw new Error("Persistent konto-lagring saknas. Satt KV_REST_API_URL och KV_REST_API_TOKEN.");
+  }
+  return process.env.BOKABANA_USE_MEMORY_STORE === "true" ? createMemoryStore() : createFileStore();
 }
 
 export async function findUserByEmail(email: string) {
@@ -140,6 +192,19 @@ export async function saveBooking(userId: string, booking: StoredBooking) {
   database.bookingsByUserId[userId] = [booking, ...deduped];
   await store.write(database);
   return booking;
+}
+
+export async function saveMatchiCheckoutBatch(batch: MatchiStoredCheckoutBatch) {
+  const store = getStore();
+  const database = await store.read();
+  database.matchiCheckoutBatchesById[batch.batchId] = batch;
+  await store.write(database);
+  return batch;
+}
+
+export async function findMatchiCheckoutBatch(batchId: string) {
+  const database = await getStore().read();
+  return database.matchiCheckoutBatchesById[batchId] ?? null;
 }
 
 export function publicUser(user: AppUser) {

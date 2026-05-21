@@ -92,13 +92,18 @@ export type MockQuoteItem = Pick<
 
 export type MockQuote = {
   batchId: string;
-  status: "quoted";
+  status: MatchiBookingBatchStatusValue;
   currency: "SEK";
   totalPrice: number;
   methods: string[];
   expiresAt: string;
   items: MockQuoteItem[];
-  checkoutMode: "mock";
+  checkoutMode: "matchi" | "mock";
+  quoteHash: string;
+  manualCheckoutUrl: string | null;
+  checkoutUrl: string | null;
+  checkoutRef: string | null;
+  lastError: string | null;
 };
 
 export type StoredBooking = {
@@ -112,4 +117,33 @@ export type StoredBooking = {
     phone: string;
   };
   players: string[];
+};
+
+export type MatchiBookingBatchStatusValue =
+  | "quoted"
+  | "checkout_pending"
+  | "payment_processing"
+  | "booked"
+  | "failed"
+  | "action_required"
+  | "cancelled";
+
+export type MatchiStoredCheckoutBatch = MockQuote & {
+  confirmedAt: string | null;
+  bookedAt: string | null;
+  lastReconciledAt: string | null;
+  rawCheckout: unknown;
+  rawReconcile: unknown;
+};
+
+export type MatchiConfirmResponse = {
+  ok: boolean;
+  status: MatchiBookingBatchStatusValue;
+  batchId: string;
+  reference: string;
+  confirmedAt: string;
+  checkoutUrl: string | null;
+  manualCheckoutUrl: string | null;
+  checkoutRef: string | null;
+  lastError: string | null;
 };

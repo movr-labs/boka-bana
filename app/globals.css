@@ -1328,6 +1328,22 @@ a {
   font-size: 14px;
 }
 
+.checkout-action-panel {
+  margin-top: 24px;
+  border: 1px solid var(--rule);
+  background: var(--cream-warm);
+  padding: 22px;
+}
+
+.checkout-action-panel h2 {
+  margin-bottom: 8px;
+}
+
+.checkout-action-panel p:not(.eyebrow) {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
 .summary-card {
   align-self: start;
   padding: 26px;

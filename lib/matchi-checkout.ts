@@ -45,9 +45,10 @@ type ReconcileResult = {
 export function createQuotedBatch(item: MockQuoteItem, quote: NormalizedQuote): MatchiStoredCheckoutBatch {
   const expiresAt = new Date(Date.now() + getQuoteTtlSeconds() * 1000).toISOString();
   const quotedPrice = quote.prices[item.slotId] ?? quote.totalPrice;
+  const hasVerifiedPrice = Number.isFinite(quotedPrice) && quotedPrice > 0;
   const pricedItem = {
     ...item,
-    mockPrice: quotedPrice || item.mockPrice,
+    mockPrice: hasVerifiedPrice ? quotedPrice : 0,
   };
   const methods = quote.methods.length ? quote.methods : ["Matchi checkout"];
   const batch: MatchiStoredCheckoutBatch = {
@@ -58,7 +59,7 @@ export function createQuotedBatch(item: MockQuoteItem, quote: NormalizedQuote): 
     methods,
     expiresAt,
     items: [pricedItem],
-    checkoutMode: quote.raw ? "matchi" : "mock",
+    checkoutMode: "matchi",
     quoteHash: stableHash({
       facilityId: pricedItem.facilityId,
       facilitySlug: pricedItem.facilitySlug,
@@ -69,7 +70,7 @@ export function createQuotedBatch(item: MockQuoteItem, quote: NormalizedQuote): 
     manualCheckoutUrl: buildManualCheckoutUrl(pricedItem),
     checkoutUrl: null,
     checkoutRef: null,
-    lastError: null,
+    lastError: hasVerifiedPrice ? null : "Matchi-priset kunde inte verifieras. Slutligt pris visas i Matchi checkout.",
     confirmedAt: null,
     bookedAt: null,
     lastReconciledAt: null,
@@ -104,12 +105,20 @@ export async function quoteMatchiItem(item: MockQuoteItem): Promise<NormalizedQu
         "x-requested-with": "XMLHttpRequest",
       },
     });
-    if (!response.ok) return fallback;
+    if (!response.ok) {
+      throw new Error(`Matchi price request failed (${response.status})`);
+    }
     const payload = (await response.json()) as MatchiQuoteApiResponse;
     const normalized = normalizeQuoteResponse(payload);
-    return normalized.totalPrice > 0 ? normalized : fallback;
-  } catch {
-    return fallback;
+    if (normalized.totalPrice <= 0) {
+      throw new Error("Matchi returned no price for this slot");
+    }
+    return normalized;
+  } catch (error) {
+    if (isEnabled(process.env.MATCHI_ALLOW_ESTIMATED_PRICE_FALLBACK)) {
+      return fallback;
+    }
+    throw error;
   }
 }
 
@@ -123,7 +132,7 @@ export async function confirmCheckoutBatch(batch: MatchiStoredCheckoutBatch): Pr
 
   const item = batch.items[0];
   if (!item) throw new Error("Checkout saknar bokningsrad.");
-  const liveQuote = await quoteMatchiItem(item);
+  const liveQuote = await quoteMatchiItem(item).catch(() => createUnpricedQuote());
   const quotedPrice = liveQuote.prices[item.slotId] ?? liveQuote.totalPrice;
   const livePrice = quotedPrice || item.mockPrice;
   const liveMethods = liveQuote.methods.length ? liveQuote.methods : batch.methods;
@@ -362,6 +371,15 @@ function createFallbackQuote(item: MockQuoteItem): NormalizedQuote {
   return {
     prices: { [item.slotId]: item.mockPrice },
     totalPrice: item.mockPrice,
+    methods: ["Matchi checkout"],
+    raw: null,
+  };
+}
+
+export function createUnpricedQuote(): NormalizedQuote {
+  return {
+    prices: {},
+    totalPrice: 0,
     methods: ["Matchi checkout"],
     raw: null,
   };

@@ -1,10 +1,15 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Calendar, CreditCard, MapPin, ShieldCheck, UsersRound } from "lucide-react";
 import BokaNav from "@/components/boka-nav";
 import type { MockQuote, MockQuoteItem } from "@/lib/matchi-types";
+
+type AuthUser = {
+  name: string;
+  email: string;
+};
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat("sv-SE", {
@@ -69,27 +74,77 @@ export default function BookingPage() {
     phone: "",
   });
   const [players, setPlayers] = useState(["", ""]);
+  const [quote, setQuote] = useState<MockQuote | null>(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const item = useMemo(() => itemFromParams(new URLSearchParams(searchParams.toString())), [searchParams]);
+  const quotedItem = quote?.items[0] ?? item;
+  const displayPrice = quote && quote.totalPrice > 0 ? quote.totalPrice : null;
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/me", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        const body = (await response.json()) as { user?: AuthUser | null };
+        return body.user ?? null;
+      })
+      .then((user) => {
+        if (!user || cancelled) return;
+        setContact((current) => ({
+          ...current,
+          name: current.name || user.name,
+          email: current.email || user.email,
+        }));
+        setPlayers((current) => current.map((player, index) => (index === 0 && !player ? user.name : player)));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!item) return;
+    const controller = new AbortController();
+    setQuote(null);
+    setQuoteError(null);
+    setQuoteLoading(true);
+
+    fetch("/api/matchi/quote", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item }),
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          const body = (await response.json().catch(() => null)) as { message?: string } | null;
+          throw new Error(body?.message || `Kunde inte hämta Matchi-pris (${response.status})`);
+        }
+        return response.json() as Promise<MockQuote>;
+      })
+      .then(setQuote)
+      .catch((err) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setQuoteError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setQuoteLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [item]);
 
   async function continueToCheckout(event: FormEvent) {
     event.preventDefault();
-    if (!item) return;
+    if (!item || !quote) return;
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/matchi/quote", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ item }),
-      });
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { message?: string } | null;
-        throw new Error(body?.message || `Kunde inte skapa Matchi-offert (${response.status})`);
-      }
-      const quote = (await response.json()) as MockQuote;
       localStorage.setItem(
         `bb:checkout:${quote.batchId}`,
         JSON.stringify({
@@ -189,32 +244,34 @@ export default function BookingPage() {
 
         <aside className="summary-card">
           <p className="eyebrow">Din tid</p>
-          <h3>{item.courtName}</h3>
+          <h3>{quotedItem?.courtName}</h3>
           <div className="summary-lines">
             <span>
               <Calendar size={16} />
-              {formatDate(item.date)}
+              {quotedItem ? formatDate(quotedItem.date) : "Valt datum"}
             </span>
             <span>
               <MapPin size={16} />
-              {item.facilityName}
+              {quotedItem?.facilityName}
             </span>
             <span>
               <UsersRound size={16} />
-              {item.sportName}
+              {quotedItem?.sportName}
             </span>
             <span>
               <CreditCard size={16} />
-              {item.start}-{item.end}
+              {quotedItem?.start}-{quotedItem?.end}
             </span>
           </div>
           <div className="total-row">
-            <span>Pris</span>
-            <strong>{formatMoney(item.mockPrice)}</strong>
+            <span>{quoteLoading ? "Hämtar Matchi-pris" : "Matchi-pris"}</span>
+            <strong>{displayPrice == null ? "-" : formatMoney(displayPrice)}</strong>
           </div>
+          {quote?.lastError ? <div className="notice">{quote.lastError}</div> : null}
+          {quoteError ? <div className="notice error">{quoteError}</div> : null}
           {error ? <div className="notice error">{error}</div> : null}
-          <button className="btn full dark" disabled={loading} type="submit">
-            {loading ? "Skapar checkout..." : "Fortsätt till checkout"}
+          <button className="btn full dark" disabled={loading || quoteLoading || !quote} type="submit">
+            {loading ? "Skapar checkout..." : quoteLoading ? "Hämtar pris..." : "Fortsätt till checkout"}
           </button>
         </aside>
       </form>

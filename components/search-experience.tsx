@@ -9,7 +9,6 @@ import type { AvailabilityResponse, MatchiAvailabilityOption, MatchiFacilitySumm
 
 type Filters = {
   surface: string;
-  priceMax: number;
   timeFrom: string;
   timeTo: string;
 };
@@ -48,7 +47,6 @@ type DirectorySummary = DirectoryBucket & {
 
 const DEFAULT_FILTERS: Filters = {
   surface: "any",
-  priceMax: 420,
   timeFrom: "06",
   timeTo: "22",
 };
@@ -123,14 +121,6 @@ function formatDateLong(iso: string) {
   }).format(date);
 }
 
-function formatMoney(value: number) {
-  return new Intl.NumberFormat("sv-SE", {
-    style: "currency",
-    currency: "SEK",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
-
 function formatCount(value: number | null | undefined) {
   if (value == null) return "-";
   return new Intl.NumberFormat("sv-SE").format(value);
@@ -168,7 +158,7 @@ function groupByCourt(options: MatchiAvailabilityOption[]): CourtGroup[] {
 
 function matchesWindow(option: MatchiAvailabilityOption, filters: Filters) {
   const hour = option.start.slice(0, 2);
-  return hour >= filters.timeFrom && hour <= filters.timeTo && option.mockPrice <= filters.priceMax;
+  return hour >= filters.timeFrom && hour <= filters.timeTo;
 }
 
 function toBookingQuery(option: MatchiAvailabilityOption) {
@@ -664,21 +654,6 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
             <RadioOption label="Hard court" active={filters.surface === "hard"} onClick={() => updateFilter("surface", "hard")} />
             <RadioOption label="Grus" active={filters.surface === "clay"} onClick={() => updateFilter("surface", "clay")} />
           </FilterBlock>
-          <FilterBlock title="Pris (mock)">
-            <input
-              type="range"
-              min={180}
-              max={520}
-              step={20}
-              value={filters.priceMax}
-              onChange={(event) => updateFilter("priceMax", Number(event.target.value))}
-            />
-            <div className="range-row">
-              <span>180 kr</span>
-              <strong>≤ {filters.priceMax} kr</strong>
-              <span>520 kr</span>
-            </div>
-          </FilterBlock>
           <FilterBlock title="Tidsfönster">
             <div className="time-selects">
               <Clock3 size={15} />
@@ -736,7 +711,6 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
             <>
               <div className="result-stack">
                 {facilityCards.map(({ facility, options }) => {
-                  const facilityPriceFrom = options.length ? Math.min(...options.map((slot) => slot.mockPrice)) : null;
                   const facilityCourtCount = new Set(options.map((slot) => slot.courtName)).size;
                   const clubUrl = toClubQuery(facility, date);
                   return (
@@ -765,8 +739,8 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
                             </div>
                           </div>
                           <div className="price-block">
-                            <span>Från</span>
-                            <strong>{facilityPriceFrom ? formatMoney(facilityPriceFrom) : "-"}</strong>
+                            <span>Pris</span>
+                            <strong>Matchi</strong>
                             <small>{options.length} tider</small>
                           </div>
                         </div>
@@ -781,7 +755,7 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
                               {options.slice(0, 10).map((slot) => (
                                 <button key={slot.slotId} className="slot-button" onClick={() => router.push(toBookingQuery(slot))}>
                                   <span>{slot.start}</span>
-                                  <small>{formatMoney(slot.mockPrice)}</small>
+                                  <small>Hämta pris</small>
                                 </button>
                               ))}
                             </div>
@@ -828,7 +802,7 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
                     {group.options.slice(0, 12).map((slot) => (
                       <button key={slot.slotId} className="slot-button compact" onClick={() => router.push(toBookingQuery(slot))}>
                         <span>{slot.start}</span>
-                        <small>{formatMoney(slot.mockPrice)}</small>
+                        <small>Pris</small>
                       </button>
                     ))}
                   </div>

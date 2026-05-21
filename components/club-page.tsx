@@ -13,14 +13,6 @@ type CourtGroup = {
   options: MatchiAvailabilityOption[];
 };
 
-function formatMoney(value: number) {
-  return new Intl.NumberFormat("sv-SE", {
-    style: "currency",
-    currency: "SEK",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
-
 function formatDateLong(iso: string) {
   const date = new Date(`${iso}T00:00:00`);
   if (Number.isNaN(date.getTime())) return "Valt datum";
@@ -116,7 +108,6 @@ export default function ClubPage() {
 
   const courts = useMemo(() => groupByCourt(data?.options ?? []), [data]);
   const facilityName = data?.facility?.name || data?.facilities[0]?.name || slug;
-  const priceFrom = data?.options.length ? Math.min(...data.options.map((option) => option.mockPrice)) : null;
 
   function updateDate(nextDate: string) {
     const normalized = normalizeSearchDate(nextDate);
@@ -156,7 +147,7 @@ export default function ClubPage() {
             </span>
             <span>
               <MapPin size={16} />
-              {priceFrom ? `Från ${formatMoney(priceFrom)}` : "Pris visas per tid"}
+              Pris hämtas från Matchi
             </span>
           </div>
         </div>
@@ -213,7 +204,7 @@ export default function ClubPage() {
                   <button className="club-slot" key={slot.slotId} onClick={() => router.push(toBookingQuery(slot))} type="button">
                     <span>{slot.start}</span>
                     <small>
-                      {slot.end} · {formatMoney(slot.mockPrice)}
+                      {slot.end} · Hämta pris
                     </small>
                   </button>
                 ))}

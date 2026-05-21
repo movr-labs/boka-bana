@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { MockQuote, MockQuoteItem } from "@/lib/matchi-types";
 import { calculateMockPrice, isIsoDate } from "@/lib/matchi";
-import { createQuotedBatch, quoteMatchiItem, toPublicQuote } from "@/lib/matchi-checkout";
+import { createQuotedBatch, createUnpricedQuote, quoteMatchiItem, toPublicQuote } from "@/lib/matchi-checkout";
 import { saveMatchiCheckoutBatch } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json()) as { item?: unknown };
     const item = normalizeItem(body.item);
-    const quote = await quoteMatchiItem(item);
+    const quote = await quoteMatchiItem(item).catch(() => createUnpricedQuote());
     const batch = await saveMatchiCheckoutBatch(createQuotedBatch(item, quote));
     return NextResponse.json(toPublicQuote(batch) satisfies MockQuote);
   } catch (error) {

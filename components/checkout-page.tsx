@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { CheckCircle2, CreditCard, ExternalLink, LockKeyhole, RefreshCw, ShieldCheck } from "lucide-react";
+import { CheckCircle2, CreditCard, ExternalLink, RefreshCw, ShieldCheck } from "lucide-react";
 import BokaNav from "@/components/boka-nav";
 import type { MatchiConfirmResponse, MockQuote, StoredBooking } from "@/lib/matchi-types";
 
@@ -14,6 +14,7 @@ type CheckoutState = {
 };
 
 function formatMoney(value: number) {
+  if (value <= 0) return "-";
   return new Intl.NumberFormat("sv-SE", {
     style: "currency",
     currency: "SEK",
@@ -233,24 +234,10 @@ export default function CheckoutPage() {
 
       <form className="container checkout-grid" onSubmit={submit}>
         <section className="booking-panel">
-          <h2>Betalning</h2>
-          <div className="form-grid">
-            <label>
-              Kortnummer
-              <input inputMode="numeric" defaultValue="4242 4242 4242 4242" />
-            </label>
-            <label>
-              Giltigt till
-              <input defaultValue="12/30" />
-            </label>
-            <label>
-              CVC
-              <input inputMode="numeric" defaultValue="123" />
-            </label>
-          </div>
+          <h2>Matchi hanterar betalningen</h2>
           <div className="mock-callout">
-            <LockKeyhole size={18} />
-            <span>Vi startar Matchi checkout och sparar bokningen först när status är bekräftad.</span>
+            <ShieldCheck size={18} />
+            <span>Du skickas vidare till Matchi för betalning. Bokningen sparas här först när Matchi-status är bekräftad.</span>
           </div>
           {isAwaitingMatchi ? (
             <div className="checkout-action-panel">

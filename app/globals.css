@@ -945,6 +945,20 @@ a {
   line-height: 1.1;
 }
 
+.club-title-button {
+  display: inline-block;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+  text-align: left;
+}
+
+.club-title-button:hover h3 {
+  color: var(--green);
+}
+
 .chips {
   display: flex;
   flex-wrap: wrap;
@@ -1012,6 +1026,17 @@ a {
 .slots-head a {
   color: var(--green);
   text-decoration: underline;
+}
+
+.slots-head button {
+  border: 0;
+  background: transparent;
+  color: var(--green);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
+  text-transform: none;
 }
 
 .slots {
@@ -1169,7 +1194,8 @@ a {
 
 .booking-hero,
 .checkout-hero,
-.account-hero {
+.account-hero,
+.club-hero {
   border-bottom: 1px solid var(--rule);
   background: #fff;
   padding: 46px 0 38px;
@@ -1177,12 +1203,39 @@ a {
 
 .booking-hero h1,
 .checkout-hero h1,
-.account-hero h1 {
+.account-hero h1,
+.club-hero h1 {
   margin: 6px 0 0;
   font-family: var(--serif);
   font-size: clamp(42px, 6vw, 70px);
   font-weight: 500;
   line-height: 1;
+}
+
+.club-hero {
+  padding-bottom: 44px;
+}
+
+.club-hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.club-hero-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--rule);
+  background: var(--cream-warm);
+  padding: 8px 11px;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.club-toolbar {
+  border-top: 0;
 }
 
 .text-button {
@@ -1354,6 +1407,77 @@ a {
   display: grid;
   gap: 14px;
   padding: 44px 0 88px;
+}
+
+.club-courts {
+  display: grid;
+  gap: 18px;
+  padding: 44px 0 88px;
+}
+
+.club-court-panel {
+  border: 1px solid var(--rule);
+  background: #fff;
+  padding: 28px 30px 30px;
+}
+
+.club-court-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 22px;
+  margin-bottom: 22px;
+}
+
+.club-court-head h2 {
+  margin: 6px 0 0;
+  font-family: var(--serif);
+  font-size: 34px;
+  font-weight: 500;
+  line-height: 1.1;
+}
+
+.club-court-head > span {
+  color: var(--ink-mute);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.club-slot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 10px;
+}
+
+.club-slot {
+  display: grid;
+  gap: 2px;
+  min-height: 72px;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  cursor: pointer;
+  padding: 11px 12px;
+  text-align: left;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.club-slot:hover {
+  border-color: var(--navy);
+  background: var(--cream-warm);
+  transform: translateY(-1px);
+}
+
+.club-slot span {
+  font-family: var(--serif);
+  font-size: 25px;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.club-slot small {
+  color: var(--ink-mute);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 .auth-wrap {
@@ -1620,7 +1744,8 @@ a {
 
   .club-top,
   .results-head,
-  .booking-row {
+  .booking-row,
+  .club-court-head {
     flex-direction: column;
   }
 

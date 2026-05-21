@@ -1,20 +1,12 @@
 import { NextResponse } from "next/server";
-import { fetchMatchiAvailability, isIsoDate } from "@/lib/matchi";
+import { normalizeSearchDate, isIsoDate, isPastDate } from "@/lib/date";
+import { fetchMatchiAvailability } from "@/lib/matchi";
 
 export const dynamic = "force-dynamic";
 
-function tomorrowISO() {
-  const date = new Date();
-  date.setDate(date.getDate() + 1);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const date = url.searchParams.get("date") || tomorrowISO();
+  const date = url.searchParams.get("date") || normalizeSearchDate(null);
   const facilitySlug = url.searchParams.get("facility") || undefined;
   const query = url.searchParams.get("q") || "";
   const sportId = url.searchParams.get("sport") || "1";
@@ -23,6 +15,9 @@ export async function GET(request: Request) {
 
   if (!isIsoDate(date)) {
     return NextResponse.json({ message: "Invalid date" }, { status: 400 });
+  }
+  if (isPastDate(date)) {
+    return NextResponse.json({ message: "Du kan inte söka på gamla datum." }, { status: 400 });
   }
 
   try {

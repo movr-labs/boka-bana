@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type FormEvent, type MouseEvent, type Rea
 import { useRouter, useSearchParams } from "next/navigation";
 import { Calendar, CircleDot, Clock3, MapPin, Search, SlidersHorizontal } from "lucide-react";
 import BokaNav from "@/components/boka-nav";
+import { isIsoDate, normalizeSearchDate, todayISO, tomorrowISO } from "@/lib/date";
 import type { AvailabilityResponse, MatchiAvailabilityOption, MatchiFacilitySummary } from "@/lib/matchi-types";
 
 type Filters = {
@@ -111,19 +112,6 @@ const MOCK_TOURNAMENTS = [
   { id: "skane", name: "Skånes Mästerskap", date: "20-24 juli 2026", host: "Malmö Tennisstadion" },
 ];
 
-function isIsoDate(value: string | null | undefined): value is string {
-  return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
-}
-
-function tomorrowISO() {
-  const date = new Date();
-  date.setDate(date.getDate() + 1);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
 function formatDateLong(iso: string) {
   if (!isIsoDate(iso)) return "valt datum";
   const date = new Date(`${iso}T00:00:00`);
@@ -206,6 +194,14 @@ function toBookingQuery(option: MatchiAvailabilityOption) {
   return `/booking?${search.toString()}`;
 }
 
+function toClubQuery(facility: MatchiFacilitySummary, date: string) {
+  const search = new URLSearchParams({
+    date,
+    sport: facility.sportId,
+  });
+  return `/clubs/${encodeURIComponent(facility.slug)}?${search.toString()}`;
+}
+
 function filtersFromSearchParams(params: Pick<URLSearchParams, "get">): Filters {
   const filters = { ...DEFAULT_FILTERS };
   const time = params.get("time") || params.get("timeFrom");
@@ -227,7 +223,7 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialDate = searchParams.get("date");
-  const [date, setDate] = useState(isIsoDate(initialDate) ? initialDate : tomorrowISO());
+  const [date, setDate] = useState(initialDate ? normalizeSearchDate(initialDate) : tomorrowISO());
   const [location, setLocation] = useState(searchParams.get("location") || "");
   const [submittedQuery, setSubmittedQuery] = useState(searchParams.get("location") || "");
   const [sportId, setSportId] = useState<SportId>(searchParams.get("sport") === "5" ? "5" : "1");
@@ -343,7 +339,7 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
   }
 
   function updateDate(nextDate: string) {
-    const normalizedDate = isIsoDate(nextDate) ? nextDate : tomorrowISO();
+    const normalizedDate = normalizeSearchDate(nextDate);
     setDate(normalizedDate);
     setOffset(0);
     if (!home) {
@@ -443,7 +439,7 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
                   />
                 </LandingField>
                 <LandingField label="Datum" icon={<Calendar size={18} />}>
-                  <input type="date" value={date} onChange={(event) => updateDate(event.target.value)} />
+                  <input min={todayISO()} type="date" value={date} onChange={(event) => updateDate(event.target.value)} />
                 </LandingField>
                 <LandingField label="Tid" icon={<Clock3 size={18} />}>
                   <input type="time" value={time} onChange={(event) => setTime(event.target.value)} />
@@ -619,7 +615,7 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
               </div>
               <div className="field compact">
                 <Calendar size={18} />
-                <input type="date" value={date} onChange={(event) => updateDate(event.target.value)} />
+                <input min={todayISO()} type="date" value={date} onChange={(event) => updateDate(event.target.value)} />
               </div>
               <button className="btn dark" onClick={submitSearch}>
                 <Search size={16} />
@@ -650,7 +646,7 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
               </div>
               <div className="field compact">
                 <Calendar size={17} />
-                <input type="date" value={date} onChange={(event) => updateDate(event.target.value)} />
+                <input min={todayISO()} type="date" value={date} onChange={(event) => updateDate(event.target.value)} />
               </div>
             </div>
             <button className="btn small" onClick={submitSearch}>
@@ -742,11 +738,12 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
                 {facilityCards.map(({ facility, options }) => {
                   const facilityPriceFrom = options.length ? Math.min(...options.map((slot) => slot.mockPrice)) : null;
                   const facilityCourtCount = new Set(options.map((slot) => slot.courtName)).size;
+                  const clubUrl = toClubQuery(facility, date);
                   return (
                     <article className="result-card" key={`${facility.sportId}:${facility.slug}`}>
                       <button
                         className="club-image"
-                        onClick={() => router.push("#courts")}
+                        onClick={() => router.push(clubUrl)}
                         aria-label={facility.name}
                         style={{ backgroundImage: clubImageBackground(facility.imageUrl) }}
                       />
@@ -756,7 +753,9 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
                             <p className="eyebrow">
                               {facility.city || "Matchi"} · Matchi · {facility.facilityId}
                             </p>
-                            <h3>{facility.name}</h3>
+                            <button className="club-title-button" onClick={() => router.push(clubUrl)} type="button">
+                              <h3>{facility.name}</h3>
+                            </button>
                             <div className="chips">
                               <span className="chip"><span />{facility.sportName.toLowerCase()}</span>
                               <span className="chip">Matchi</span>
@@ -775,7 +774,7 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
                         <div className="slots-strip">
                           <div className="slots-head">
                             <span>Lediga tider</span>
-                            {options.length ? <a href="#courts">Se schemat</a> : null}
+                            {options.length ? <button onClick={() => router.push(clubUrl)} type="button">Se banorna</button> : null}
                           </div>
                           {options.length ? (
                             <div className="slots">

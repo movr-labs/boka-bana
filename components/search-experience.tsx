@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState, type FormEvent, type MouseEvent, type ReactNode } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Calendar, CircleDot, Clock3, MapPin, MapPinned, Search, SlidersHorizontal } from "lucide-react";
+import { ArrowUpRight, Calendar, CircleDot, Clock3, MapPin, MapPinned, Search, SlidersHorizontal } from "lucide-react";
 import BokaNav from "@/components/boka-nav";
 import CourtMap, { type CourtMapPoint } from "@/components/court-map";
 import { isIsoDate, normalizeSearchDate, todayISO, tomorrowISO } from "@/lib/date";
 import type { AvailabilityResponse, MatchiAvailabilityOption, MatchiFacilitySummary } from "@/lib/matchi-types";
+import { FEATURED_TENNIS_EVENTS } from "@/lib/tennis-events";
 
 type Filters = {
   surface: string;
@@ -108,12 +110,6 @@ const FEATURED_CLUBS = [
     imageUrl: "https://assets.matchi.se/archive/2015/03/thumb_3d0f47550a3093e937313cce16adbb36.jpg",
     description: "En aktiv klubb i Ekebyhovshallen med tennis, pickleball, squash och juniorverksamhet.",
   },
-];
-
-const MOCK_TOURNAMENTS = [
-  { id: "stockholm", name: "Stockholmsmästerskapen", date: "12-18 juni 2026", host: "Matchi-klubbar i Stockholm" },
-  { id: "padel", name: "Sommarpadelserien", date: "Juni-augusti 2026", host: "Utvalda padelhallar" },
-  { id: "skane", name: "Skånes Mästerskap", date: "20-24 juli 2026", host: "Malmö Tennisstadion" },
 ];
 
 function formatDateLong(iso: string) {
@@ -607,24 +603,25 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
                 <p className="eyebrow light">Sommarsäsongen 2026</p>
                 <h2>Tävlingar &amp; serier</h2>
               </div>
-              <button className="btn ghost-light small" type="button">
+              <Link className="btn ghost-light small" href="/tavlingar">
                 Hela kalendern
-              </button>
+              </Link>
             </div>
 
             <div className="tournament-list">
-              {MOCK_TOURNAMENTS.map((event, index) => (
+              {FEATURED_TENNIS_EVENTS.map((event, index) => (
                 <div className="tournament-row" key={event.id}>
                   <span className="eyebrow light">{String(index + 1).padStart(2, "0")}</span>
-                  <strong>{event.name}</strong>
-                  <span>{event.date}</span>
+                  <strong>{event.title}</strong>
+                  <span>{event.dateLabel}</span>
                   <span>
-                    <small>Värdklubb</small>
-                    {event.host}
+                    <small>{event.category}</small>
+                    {event.location}
                   </span>
-                  <button className="btn ghost-light small" type="button">
-                    Anmäl
-                  </button>
+                  <a className="btn ghost-light small" href={event.href} rel="noreferrer" target="_blank">
+                    <ArrowUpRight size={15} />
+                    Tennis.se
+                  </a>
                 </div>
               ))}
             </div>

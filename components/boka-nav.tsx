@@ -15,7 +15,7 @@ export default function BokaNav({
   current,
   variant = "default",
 }: {
-  current?: "home" | "search" | "booking" | "bookings" | "login";
+  current?: "home" | "search" | "booking" | "bookings" | "login" | "tournaments";
   variant?: "default" | "on-dark";
 }) {
   const [user, setUser] = useState<PublicUser | null>(null);
@@ -50,6 +50,9 @@ export default function BokaNav({
       <nav className="nav-links" aria-label="Huvudmeny">
         <Link className={current === "search" || current === "home" ? "active" : ""} href="/search">
           Sök bana
+        </Link>
+        <Link className={current === "tournaments" ? "active" : ""} href="/tavlingar">
+          Tävlingar
         </Link>
         <Link className={current === "bookings" ? "active" : ""} href="/bookings">
           <CalendarDays size={16} />

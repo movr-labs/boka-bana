@@ -335,7 +335,7 @@ a {
 
 .landing-hero-copy {
   position: relative;
-  padding: clamp(80px, 9vw, 135px) 0 clamp(86px, 8vw, 128px);
+  padding: clamp(54px, 7vw, 108px) 0 clamp(86px, 8vw, 128px);
   text-align: center;
 }
 
@@ -363,7 +363,7 @@ a {
 .landing-search-wrap {
   position: relative;
   z-index: 4;
-  margin-top: -42px;
+  margin-top: clamp(24px, 3vw, 42px);
 }
 
 .landing-search-panel {

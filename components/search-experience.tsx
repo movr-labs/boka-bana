@@ -354,22 +354,6 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
             <BokaNav current="home" variant="on-dark" />
           </div>
 
-          <div className="container landing-hero-copy">
-            <p className="eyebrow light">
-              {SPORT_LABELS[sportId]} · {formatCount(directory.totalClubs)} klubbar ·{" "}
-              {formatCount(directory.totalCourts)} banor
-            </p>
-            <h1>
-              Banan väntar.
-              <br />
-              <em>Boka på två minuter.</em>
-            </h1>
-            <p>
-              En samlad plats för bokning av tennis- och padelbanor i hela landet med klubbarnas
-              riktiga priser och kalendrar.
-            </p>
-          </div>
-
           <div className="container landing-search-wrap">
             <form className="landing-search-panel" onSubmit={submitSearch}>
               <div className="landing-search-top">
@@ -389,7 +373,6 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
                     Padel
                   </button>
                 </div>
-                <div className="eyebrow">Lediga tider i realtid</div>
               </div>
 
               <div className="landing-search-grid" role="search">
@@ -419,6 +402,22 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
                 </button>
               </div>
             </form>
+          </div>
+
+          <div className="container landing-hero-copy">
+            <p className="eyebrow light">
+              {SPORT_LABELS[sportId]} · {formatCount(directory.totalClubs)} klubbar ·{" "}
+              {formatCount(directory.totalCourts)} banor
+            </p>
+            <h1>
+              Banan väntar.
+              <br />
+              <em>Boka på två minuter.</em>
+            </h1>
+            <p>
+              En samlad plats för bokning av tennis- och padelbanor i hela landet med klubbarnas
+              riktiga priser och kalendrar.
+            </p>
           </div>
         </section>
 

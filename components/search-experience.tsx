@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Calendar, CircleDot, Clock3, MapPin, Search, SlidersHorizontal } from "lucide-react";
+import { Calendar, CircleDot, Clock3, MapPin, MapPinned, Search, SlidersHorizontal } from "lucide-react";
 import BokaNav from "@/components/boka-nav";
+import CourtMap, { type CourtMapPoint } from "@/components/court-map";
 import { isIsoDate, normalizeSearchDate, todayISO, tomorrowISO } from "@/lib/date";
 import type { AvailabilityResponse, MatchiAvailabilityOption, MatchiFacilitySummary } from "@/lib/matchi-types";
 
@@ -69,6 +70,19 @@ const FALLBACK_DIRECTORY: DirectoryBucket = {
   cities: FALLBACK_CITIES,
 };
 
+const CITY_COORDINATES: Record<string, { latitude: number; longitude: number }> = {
+  Stockholm: { latitude: 59.3293, longitude: 18.0686 },
+  Göteborg: { latitude: 57.7089, longitude: 11.9746 },
+  Malmö: { latitude: 55.605, longitude: 13.0038 },
+  Uppsala: { latitude: 59.8586, longitude: 17.6389 },
+  Linköping: { latitude: 58.4108, longitude: 15.6214 },
+  Västerås: { latitude: 59.6099, longitude: 16.5448 },
+  Lund: { latitude: 55.7047, longitude: 13.191 },
+  Helsingborg: { latitude: 56.0465, longitude: 12.6945 },
+  Örebro: { latitude: 59.2753, longitude: 15.2134 },
+  Umeå: { latitude: 63.8258, longitude: 20.263 },
+};
+
 const FEATURED_CLUBS = [
   {
     name: "Kungsbacka Tennisklubb",
@@ -120,6 +134,47 @@ function formatCount(value: number | null | undefined) {
 
 function directoryForSport(summary: DirectorySummary | null, sportId: SportId) {
   return summary?.bySport?.[sportId] ?? summary ?? FALLBACK_DIRECTORY;
+}
+
+function mapPointsForDirectory(directory: DirectoryBucket): CourtMapPoint[] {
+  return directory.cities
+    .flatMap((city) => {
+      const coordinates = CITY_COORDINATES[city.name];
+      if (!coordinates) return [];
+      return [
+        {
+          id: city.name,
+          name: city.name,
+          city: `${formatCount(city.clubs)} klubbar`,
+          latitude: coordinates.latitude,
+          longitude: coordinates.longitude,
+          optionsCount: city.clubs,
+        },
+      ];
+    })
+    .slice(0, 7);
+}
+
+function mapPointsForSearchPreview(query: string, fallbackPoints: CourtMapPoint[]) {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return fallbackPoints;
+
+  const cityName = Object.keys(CITY_COORDINATES).find((name) => {
+    const normalizedName = name.toLowerCase();
+    return normalizedName.includes(normalizedQuery) || normalizedQuery.includes(normalizedName);
+  });
+  if (!cityName) return fallbackPoints;
+
+  const coordinates = CITY_COORDINATES[cityName];
+  return [
+    {
+      id: cityName,
+      name: cityName,
+      city: "Sökområde",
+      latitude: coordinates.latitude,
+      longitude: coordinates.longitude,
+    },
+  ];
 }
 
 function clubImageBackground(imageUrl: string | null) {
@@ -280,6 +335,11 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
   const canPageBack = Boolean(data && data.offset > 0);
   const canPageForward = Boolean(data && data.offset + data.limit < totalResults);
   const directory = useMemo(() => directoryForSport(directorySummary, sportId), [directorySummary, sportId]);
+  const landingMapPoints = useMemo(() => mapPointsForDirectory(directory), [directory]);
+  const searchMapPreviewPoints = useMemo(
+    () => mapPointsForSearchPreview(location || submittedQuery, landingMapPoints),
+    [landingMapPoints, location, submittedQuery],
+  );
 
   function updateFilter<K extends keyof Filters>(key: K, value: Filters[K]) {
     setFilters((current) => ({ ...current, [key]: value }));
@@ -343,6 +403,18 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
     router.push(buildSearchUrl({ nextOffset: 0, nextQuery }));
   }
 
+  function openMapView() {
+    const params = new URLSearchParams({
+      date,
+      sport: sportId,
+      time,
+      duration,
+    });
+    const query = location.trim() || submittedQuery || "Stockholm";
+    params.set("location", query);
+    router.push(`/map?${params.toString()}`);
+  }
+
   if (home) {
     return (
       <main className="page-shell landing-page">
@@ -400,6 +472,20 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
                   <Search size={16} />
                   Sök
                 </button>
+              </div>
+
+              <div className="landing-map-teaser">
+                <CourtMap points={landingMapPoints} variant="preview" />
+                <div className="landing-map-overlay">
+                  <div>
+                    <p className="eyebrow">Kartvy</p>
+                    <strong>Lediga banor nära vald tid</strong>
+                  </div>
+                  <button className="btn small" onClick={openMapView} type="button">
+                    <MapPinned size={16} />
+                    Visa kartan
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -619,6 +705,20 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
 
       <section className="container results-wrap">
         <aside className="filters">
+          <section className="map-filter-card" aria-label="Kartvy">
+            <div className="map-filter-map">
+              <CourtMap points={searchMapPreviewPoints} variant="preview" />
+            </div>
+            <span className="map-filter-body">
+              <span className="eyebrow">Kartvy</span>
+              <strong>Se klubbarna på kartan</strong>
+              <small>{location.trim() || submittedQuery || "Valt område"}</small>
+            </span>
+            <button className="map-filter-action" onClick={openMapView} type="button">
+              <MapPinned size={15} />
+              Öppna
+            </button>
+          </section>
           <div className="eyebrow">Förfina</div>
           <FilterBlock title="Underlag">
             <RadioOption label="Alla" active={filters.surface === "any"} onClick={() => updateFilter("surface", "any")} />

@@ -20,6 +20,8 @@ export type MatchiFacilitySummary = {
   sportId: string;
   sportName: string;
   bookableCourts: number | null;
+  latitude: number | null;
+  longitude: number | null;
 };
 
 export type MatchiAvailabilityOption = {
@@ -45,6 +47,17 @@ export type AvailabilityResponse = {
   facility?: MatchiFacility;
   facilities: MatchiFacilitySummary[];
   options: MatchiAvailabilityOption[];
+  totalResults: number;
+  offset: number;
+  limit: number;
+  query: string;
+  sportId: string;
+  sportName: string;
+  fetchedAt: string;
+};
+
+export type MatchiFacilityMapResponse = {
+  facilities: MatchiFacilitySummary[];
   totalResults: number;
   offset: number;
   limit: number;

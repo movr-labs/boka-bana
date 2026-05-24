@@ -18,6 +18,7 @@ type MapSearchRequest = {
   id: number;
   date: string;
   label: string;
+  pending?: boolean;
   query?: string;
   center?: CourtMapViewport["center"];
   bounds?: CourtMapViewport["bounds"];
@@ -57,10 +58,13 @@ export default function MapView() {
     id: 0,
     date: initialDate,
     label: initialLocation,
-    query: initialLocation,
+    pending: shouldAutoSearch && initialMapView != null,
+    query: shouldAutoSearch && initialMapView != null ? undefined : initialLocation,
   }));
 
   useEffect(() => {
+    if (searchRequest.pending) return;
+
     const controller = new AbortController();
     const params = new URLSearchParams({
       date: searchRequest.date,

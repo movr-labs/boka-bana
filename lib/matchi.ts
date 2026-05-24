@@ -16,8 +16,14 @@ const MAX_LIMIT = 20;
 const DIRECTORY_PAGE_LIMIT = MAX_LIMIT;
 const MAX_DIRECTORY_PAGES = 30;
 const MAX_BOUNDS_SEARCH_PAGES_PER_POINT = 5;
+const BOUNDS_SEARCH_CONCURRENCY = 3;
+const COORDINATE_FETCH_CONCURRENCY = 6;
+const AVAILABILITY_FETCH_CONCURRENCY = 3;
+const MAP_SEARCH_CACHE_TTL_MS = 1000 * 45;
 const COORDINATE_CACHE_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 const MISSING_COORDINATE_CACHE_TTL_MS = 1000 * 60 * 60;
+const MATCHI_MAX_RETRIES = 3;
+const MATCHI_RETRY_BASE_DELAY_MS = 700;
 
 const SPORTS = {
   "1": "Tennis",
@@ -82,6 +88,7 @@ type CoordinateCacheEntry = {
 };
 
 const facilityCoordinateCache = new Map<string, CoordinateCacheEntry>();
+const mapSearchCache = new Map<string, { expiresAt: number; payload: MatchiFacilityMapResponse }>();
 
 export function listMatchiFacilities() {
   return FALLBACK_FACILITIES.map((facility) => ({ ...facility }));
@@ -164,8 +171,10 @@ export async function fetchMatchiAvailability(input: {
     limit,
   });
 
-  const optionGroups = await Promise.all(
-    search.facilities.map((facility) =>
+  const optionGroups = await mapConcurrent(
+    search.facilities,
+    AVAILABILITY_FETCH_CONCURRENCY,
+    (facility) =>
       fetchFacilitySlots({
         facility,
         date: input.date,
@@ -173,7 +182,6 @@ export async function fetchMatchiAvailability(input: {
         sportName,
         fetchedAt,
       }).catch(() => [] as MatchiAvailabilityOption[]),
-    ),
   );
   const options = optionGroups.flat().sort(compareOptions);
   const facilities = input.includeCoordinates
@@ -226,6 +234,18 @@ export async function fetchMatchiFacilitiesForMap(input: {
   const limit = normalizeLimit(input.limit);
   const fetchedAt = new Date().toISOString();
   const query = input.query ?? "";
+  const cacheKey = createMapSearchCacheKey({
+    ...input,
+    query,
+    sportId,
+    offset,
+    limit,
+  });
+  const cached = mapSearchCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cloneMapResponse(cached.payload);
+  }
+
   const search =
     input.bounds && !query.trim()
       ? await findMatchiFacilitiesInBounds({
@@ -262,7 +282,7 @@ export async function fetchMatchiFacilitiesForMap(input: {
     ? facilitiesWithCoordinates.filter((facility) => facilityIsInBounds(facility, bounds))
     : facilitiesWithCoordinates;
 
-  return {
+  const payload = {
     facilities,
     totalResults: search.totalResults,
     offset,
@@ -272,6 +292,51 @@ export async function fetchMatchiFacilitiesForMap(input: {
     sportName,
     fetchedAt,
   };
+  mapSearchCache.set(cacheKey, {
+    expiresAt: Date.now() + MAP_SEARCH_CACHE_TTL_MS,
+    payload: cloneMapResponse(payload),
+  });
+  return payload;
+}
+
+function createMapSearchCacheKey(input: {
+  query?: string;
+  date: string;
+  sportId?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  bounds?: FacilityBounds | null;
+  offset?: number;
+  limit?: number;
+}) {
+  return JSON.stringify({
+    q: input.query?.trim() ?? "",
+    date: input.date,
+    sport: input.sportId ?? "",
+    lat: roundCoordinate(input.latitude),
+    lng: roundCoordinate(input.longitude),
+    bounds: input.bounds
+      ? {
+          north: roundCoordinate(input.bounds.north),
+          south: roundCoordinate(input.bounds.south),
+          east: roundCoordinate(input.bounds.east),
+          west: roundCoordinate(input.bounds.west),
+        }
+      : null,
+    offset: input.offset ?? 0,
+    limit: input.limit ?? MAX_LIMIT,
+  });
+}
+
+function cloneMapResponse(payload: MatchiFacilityMapResponse): MatchiFacilityMapResponse {
+  return {
+    ...payload,
+    facilities: payload.facilities.map((facility) => ({ ...facility })),
+  };
+}
+
+function roundCoordinate(value: number | null | undefined) {
+  return value == null ? null : Number(value.toFixed(5));
 }
 
 async function fetchAllMatchiFacilities(input: {
@@ -444,7 +509,9 @@ async function findMatchiFacilitiesInBounds(input: {
   const bySlug = new Map<string, MatchiFacilitySummary>();
   const points = buildBoundsSearchPoints(input.bounds, input.center);
 
-  for (const point of points) {
+  const results = await mapConcurrent(points, BOUNDS_SEARCH_CONCURRENCY, async (point) => {
+    const facilities: MatchiFacilitySummary[] = [];
+
     for (let page = 0; page < MAX_BOUNDS_SEARCH_PAGES_PER_POINT; page += 1) {
       const offset = page * MAX_LIMIT;
       const result = await findMatchiFacilities({
@@ -458,14 +525,18 @@ async function findMatchiFacilitiesInBounds(input: {
         longitude: point.longitude,
       }).catch(() => ({ facilities: [], totalResults: 0 }));
 
-      for (const facility of result.facilities) {
-        bySlug.set(`${facility.sportId}:${facility.slug}`, facility);
-      }
+      facilities.push(...result.facilities);
 
       if (!result.facilities.length || offset + MAX_LIMIT >= result.totalResults) {
         break;
       }
     }
+
+    return facilities;
+  });
+
+  for (const facility of results.flat()) {
+    bySlug.set(`${facility.sportId}:${facility.slug}`, facility);
   }
 
   const facilities = Array.from(bySlug.values());
@@ -517,23 +588,18 @@ async function enrichFacilitiesWithCoordinates(
   sportId: string,
   facilitySlugs: Set<string>,
 ): Promise<MatchiFacilitySummary[]> {
-  const enriched: MatchiFacilitySummary[] = [];
-
-  for (const facility of facilities) {
+  return mapConcurrent(facilities, COORDINATE_FETCH_CONCURRENCY, async (facility) => {
     if (!facilitySlugs.has(facility.slug)) {
-      enriched.push(facility);
-      continue;
+      return facility;
     }
 
     const coordinates = await fetchFacilityCoordinates(facility.slug, date, sportId);
-    enriched.push({
+    return {
       ...facility,
       latitude: coordinates.latitude,
       longitude: coordinates.longitude,
-    });
-  }
-
-  return enriched;
+    };
+  });
 }
 
 async function fetchFacilityCoordinates(slug: string, date: string, sportId: string) {
@@ -589,20 +655,8 @@ async function fetchFacilitySlots(input: {
 }
 
 async function fetchText(url: string, init?: RequestInit): Promise<string> {
-  const response = await fetch(url, {
-    cache: "no-store",
-    ...init,
-    headers: {
-      "accept-language": "en-US,en;q=0.9,sv-SE;q=0.8,sv;q=0.7",
-      "user-agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
-      ...(init?.headers ?? {}),
-    },
-  });
-
-  if (response.status === 429) {
-    await delay(700);
-    const retry = await fetch(url, {
+  for (let attempt = 0; attempt <= MATCHI_MAX_RETRIES; attempt += 1) {
+    const response = await fetch(url, {
       cache: "no-store",
       ...init,
       headers: {
@@ -613,24 +667,58 @@ async function fetchText(url: string, init?: RequestInit): Promise<string> {
       },
     });
 
-    if (!retry.ok) {
-      throw new Error(`Matchi request failed (${retry.status})`);
+    if (response.status === 429 && attempt < MATCHI_MAX_RETRIES) {
+      await delay(retryDelay(response, attempt));
+      continue;
     }
 
-    return retry.text();
+    if (!response.ok) {
+      throw new Error(`Matchi request failed (${response.status})`);
+    }
+
+    return response.text();
   }
 
-  if (!response.ok) {
-    throw new Error(`Matchi request failed (${response.status})`);
-  }
-
-  return response.text();
+  throw new Error("Matchi request failed (429)");
 }
 
 function delay(ms: number) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+function retryDelay(response: Response, attempt: number) {
+  const retryAfterSeconds = Number(response.headers.get("retry-after"));
+  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+    return retryAfterSeconds * 1000;
+  }
+
+  const exponentialDelay = MATCHI_RETRY_BASE_DELAY_MS * 2 ** attempt;
+  const jitter = Math.floor(Math.random() * 250);
+  return exponentialDelay + jitter;
+}
+
+async function mapConcurrent<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.max(1, Math.min(concurrency, items.length));
+
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (nextIndex < items.length) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+      }
+    }),
+  );
+
+  return results;
 }
 
 function parseFindFacilitiesHtml(

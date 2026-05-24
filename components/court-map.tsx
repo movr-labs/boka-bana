@@ -35,6 +35,7 @@ type CourtMapProps = {
   variant?: "preview" | "full";
   loading?: boolean;
   className?: string;
+  initialView?: MapView;
   onSelect?: (point: CourtMapPoint) => void;
   onViewportChange?: (viewport: CourtMapViewport) => void;
   preserveViewOnPointsChange?: boolean;
@@ -72,6 +73,7 @@ export default function CourtMap({
   variant = "preview",
   loading = false,
   className = "",
+  initialView: preferredInitialView,
   onSelect,
   onViewportChange,
   preserveViewOnPointsChange = false,
@@ -101,16 +103,19 @@ export default function CourtMap({
     () => points.filter((point) => point.latitude != null && point.longitude != null),
     [points],
   );
-  const initialView = useMemo(() => createMapView(visiblePoints, variant), [visiblePoints, variant]);
+  const initialView = useMemo(
+    () => normalizeInitialView(preferredInitialView) ?? createMapView(visiblePoints, variant),
+    [preferredInitialView, visiblePoints, variant],
+  );
   const [view, setView] = useState(initialView);
 
   useEffect(() => {
     if (preserveViewOnPointsChange && initializedView) return;
     setView(initialView);
-    if (visiblePoints.length > 0) {
+    if (preferredInitialView || visiblePoints.length > 0) {
       setInitializedView(true);
     }
-  }, [initialView, initializedView, preserveViewOnPointsChange, visiblePoints.length]);
+  }, [initialView, initializedView, preserveViewOnPointsChange, preferredInitialView, visiblePoints.length]);
 
   const tiles = useMemo(() => createTiles(view, size), [view, size]);
   const markers = useMemo(() => projectMarkers(visiblePoints, view, size), [visiblePoints, view, size]);
@@ -279,6 +284,17 @@ function createMapView(points: CourtMapPoint[], variant: "preview" | "full"): Ma
   return { center, zoom };
 }
 
+function normalizeInitialView(view: MapView | undefined): MapView | null {
+  if (!view) return null;
+  return {
+    center: {
+      latitude: Math.max(-85, Math.min(85, view.center.latitude)),
+      longitude: normalizeMapLongitude(view.center.longitude),
+    },
+    zoom: clampZoom(view.zoom),
+  };
+}
+
 function zoomView(view: MapView, delta: number, size: MapSize, anchor?: { x: number; y: number }): MapView {
   const nextZoom = clampZoom(view.zoom + delta);
   if (nextZoom === view.zoom) return view;
@@ -417,6 +433,10 @@ function worldToLatLng(x: number, y: number, zoom: number) {
     latitude: Math.max(-85, Math.min(85, latitude)),
     longitude: ((((longitude + 180) % 360) + 360) % 360) - 180,
   };
+}
+
+function normalizeMapLongitude(longitude: number) {
+  return ((((longitude + 180) % 360) + 360) % 360) - 180;
 }
 
 function average(values: number[]) {

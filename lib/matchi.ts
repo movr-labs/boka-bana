@@ -15,6 +15,7 @@ const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 20;
 const DIRECTORY_PAGE_LIMIT = MAX_LIMIT;
 const MAX_DIRECTORY_PAGES = 30;
+const MAX_BOUNDS_SEARCH_PAGES_PER_POINT = 5;
 const COORDINATE_CACHE_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 const MISSING_COORDINATE_CACHE_TTL_MS = 1000 * 60 * 60;
 
@@ -444,19 +445,26 @@ async function findMatchiFacilitiesInBounds(input: {
   const points = buildBoundsSearchPoints(input.bounds, input.center);
 
   for (const point of points) {
-    const result = await findMatchiFacilities({
-      query: "",
-      date: input.date,
-      sportId: input.sportId,
-      sportName: input.sportName,
-      offset: 0,
-      limit: MAX_LIMIT,
-      latitude: point.latitude,
-      longitude: point.longitude,
-    }).catch(() => ({ facilities: [], totalResults: 0 }));
+    for (let page = 0; page < MAX_BOUNDS_SEARCH_PAGES_PER_POINT; page += 1) {
+      const offset = page * MAX_LIMIT;
+      const result = await findMatchiFacilities({
+        query: "",
+        date: input.date,
+        sportId: input.sportId,
+        sportName: input.sportName,
+        offset,
+        limit: MAX_LIMIT,
+        latitude: point.latitude,
+        longitude: point.longitude,
+      }).catch(() => ({ facilities: [], totalResults: 0 }));
 
-    for (const facility of result.facilities) {
-      bySlug.set(`${facility.sportId}:${facility.slug}`, facility);
+      for (const facility of result.facilities) {
+        bySlug.set(`${facility.sportId}:${facility.slug}`, facility);
+      }
+
+      if (!result.facilities.length || offset + MAX_LIMIT >= result.totalResults) {
+        break;
+      }
     }
   }
 

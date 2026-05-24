@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { MapPin, Search, X } from "lucide-react";
 import CourtMap, { type CourtMapPoint, type CourtMapViewport } from "@/components/court-map";
@@ -28,11 +28,17 @@ const SPORT_LABELS: Record<SportId, string> = {
   "5": "Padel",
 };
 
+const STOCKHOLM_INITIAL_VIEW = {
+  center: { latitude: 59.3293, longitude: 18.0686 },
+  zoom: 12,
+};
+
 export default function MapView() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialDate = normalizeSearchDate(searchParams.get("date") || tomorrowISO());
   const initialLocation = searchParams.get("location") || "Stockholm";
+  const shouldAutoSearch = searchParams.get("autoSearch") === "1";
   const sportId: SportId = searchParams.get("sport") === "5" ? "5" : "1";
   const [selectedDate, setSelectedDate] = useState(initialDate);
   const [selectedTime, setSelectedTime] = useState(searchParams.get("time") || "18:00");
@@ -45,6 +51,8 @@ export default function MapView() {
   const [availabilityError, setAvailabilityError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [viewport, setViewport] = useState<CourtMapViewport | null>(null);
+  const didSearchInitialViewport = useRef(false);
+  const initialMapView = useMemo(() => initialViewForLocation(initialLocation), [initialLocation]);
   const [searchRequest, setSearchRequest] = useState<MapSearchRequest>(() => ({
     id: 0,
     date: initialDate,
@@ -155,6 +163,20 @@ export default function MapView() {
     setViewport(nextViewport);
   }, []);
 
+  useEffect(() => {
+    if (!shouldAutoSearch || !viewport || didSearchInitialViewport.current) return;
+    if (!initialMapView && (loadingFacilities || points.length === 0)) return;
+
+    didSearchInitialViewport.current = true;
+    setSearchRequest({
+      id: Date.now(),
+      date: selectedDate,
+      label: initialLocation || "Stockholm",
+      center: viewport.center,
+      bounds: viewport.bounds,
+    });
+  }, [initialLocation, initialMapView, loadingFacilities, points.length, selectedDate, shouldAutoSearch, viewport]);
+
   function closeMap() {
     const params = new URLSearchParams({
       date: selectedDate,
@@ -183,6 +205,7 @@ export default function MapView() {
       <CourtMap
         className="map-canvas"
         loading={loadingFacilities}
+        initialView={initialMapView ?? undefined}
         onSelect={(point) => setSelectedId(point.id)}
         onViewportChange={updateViewport}
         points={points}
@@ -270,6 +293,18 @@ export default function MapView() {
       ) : null}
     </main>
   );
+}
+
+function initialViewForLocation(location: string) {
+  return normalizeLocation(location).includes("stockholm") ? STOCKHOLM_INITIAL_VIEW : null;
+}
+
+function normalizeLocation(location: string) {
+  return location
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
 }
 
 function toMapPoint(facility: MatchiFacilitySummary, options: MatchiAvailabilityOption[]): CourtMapPoint | null {

@@ -405,6 +405,7 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
       sport: sportId,
       time,
       duration,
+      autoSearch: "1",
     });
     const query = location.trim() || submittedQuery || "Stockholm";
     params.set("location", query);

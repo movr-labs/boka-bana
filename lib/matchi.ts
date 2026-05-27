@@ -138,6 +138,8 @@ export async function fetchMatchiAvailability(input: {
   query?: string;
   date: string;
   sportId?: string;
+  latitude?: number | null;
+  longitude?: number | null;
   offset?: number;
   limit?: number;
   includeCoordinates?: boolean;
@@ -169,6 +171,8 @@ export async function fetchMatchiAvailability(input: {
     sportName,
     offset,
     limit,
+    latitude: input.latitude,
+    longitude: input.longitude,
   });
 
   const optionGroups = await mapConcurrent(
@@ -240,6 +244,8 @@ export async function fetchMatchiFacilitiesForMap(input: {
     sportId,
     offset,
     limit,
+    latitude: input.latitude,
+    longitude: input.longitude,
   });
   const cached = mapSearchCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {

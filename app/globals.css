@@ -238,6 +238,60 @@ a {
   font-size: 20px;
 }
 
+.location-field {
+  position: relative;
+}
+
+.location-field-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.location-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 14px;
+  z-index: 30;
+  display: grid;
+  gap: 4px;
+  width: min(280px, calc(100vw - 48px));
+  padding: 7px;
+  border: 1px solid rgba(15, 53, 39, 0.14);
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 22px 52px -34px rgba(15, 53, 39, 0.52);
+  color: var(--ink);
+}
+
+.location-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 38px;
+  border: 0;
+  background: transparent;
+  color: var(--green-deep);
+  cursor: pointer;
+  font-weight: 800;
+  text-align: left;
+}
+
+.location-menu button:hover {
+  background: rgba(26, 77, 58, 0.08);
+}
+
+.location-menu button:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.location-menu small {
+  padding: 0 8px 5px;
+  color: #9b2f24;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .btn {
   display: inline-flex;
   align-items: center;
@@ -509,7 +563,7 @@ a {
   width: 256px;
   height: 256px;
   user-select: none;
-  filter: grayscale(0.92) sepia(0.12) hue-rotate(72deg) saturate(0.5) brightness(1.08) contrast(0.9);
+  filter: saturate(1.12) brightness(1.02) contrast(0.98);
 }
 
 .court-map::after {
@@ -519,8 +573,8 @@ a {
   z-index: 1;
   pointer-events: none;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(244, 244, 242, 0.24)),
-    rgba(15, 53, 39, 0.03);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(244, 244, 242, 0.08)),
+    rgba(15, 53, 39, 0.01);
 }
 
 .court-map-markers {
@@ -529,18 +583,20 @@ a {
 
 .court-map-marker {
   position: absolute;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  max-width: 190px;
+  display: block;
+  width: 1px;
+  height: 1px;
   padding: 0;
   border: 0;
   background: transparent;
   cursor: pointer;
-  transform: translate(-50%, -50%);
+  overflow: visible;
 }
 
 .court-map-pin {
+  position: absolute;
+  left: 0;
+  top: 0;
   width: 15px;
   height: 15px;
   flex: 0 0 auto;
@@ -550,6 +606,7 @@ a {
   box-shadow:
     0 0 0 5px rgba(26, 77, 58, 0.16),
     0 10px 18px rgba(15, 53, 39, 0.22);
+  transform: translate(-50%, -50%);
 }
 
 .court-map-marker.selected .court-map-pin {
@@ -560,9 +617,13 @@ a {
 }
 
 .court-map-marker-label {
+  position: absolute;
+  left: 13px;
+  top: 0;
   display: grid;
   gap: 0;
   min-width: 72px;
+  max-width: 176px;
   padding: 6px 8px;
   border: 1px solid rgba(15, 53, 39, 0.14);
   background: rgba(255, 255, 255, 0.9);
@@ -571,6 +632,15 @@ a {
   font-size: 12px;
   line-height: 1.15;
   text-align: left;
+  transform: translateY(-50%);
+}
+
+.court-map-marker-label strong,
+.court-map-marker-label span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .court-map-marker-label span {

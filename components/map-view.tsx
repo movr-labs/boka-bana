@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { MapPin, Search, X } from "lucide-react";
+import { MapPin, X } from "lucide-react";
 import CourtMap, { type CourtMapPoint, type CourtMapViewport } from "@/components/court-map";
 import { normalizeSearchDate, todayISO, tomorrowISO } from "@/lib/date";
 import type {
@@ -14,14 +14,16 @@ import type {
 
 type SportId = "1" | "5";
 
-type MapSearchRequest = {
-  id: number;
-  date: string;
-  label: string;
-  pending?: boolean;
-  query?: string;
-  center?: CourtMapViewport["center"];
-  bounds?: CourtMapViewport["bounds"];
+type Coordinates = {
+  latitude: number;
+  longitude: number;
+};
+
+type FacilityBounds = CourtMapViewport["bounds"];
+
+type BoundsRequest = {
+  bounds: FacilityBounds;
+  controller: AbortController;
 };
 
 const SPORT_LABELS: Record<SportId, string> = {
@@ -31,60 +33,91 @@ const SPORT_LABELS: Record<SportId, string> = {
 
 const STOCKHOLM_INITIAL_VIEW = {
   center: { latitude: 59.3293, longitude: 18.0686 },
-  zoom: 12,
+  zoom: 13,
 };
+
+const AUTO_SEARCH_DEBOUNCE_MS = 450;
 
 export default function MapView() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialDate = normalizeSearchDate(searchParams.get("date") || tomorrowISO());
-  const initialLocation = searchParams.get("location") || "Stockholm";
-  const shouldAutoSearch = searchParams.get("autoSearch") === "1";
+  const initialLatitude = parseFiniteNumber(searchParams.get("lat"));
+  const initialLongitude = parseFiniteNumber(searchParams.get("lng"));
+  const initialCoordinates =
+    initialLatitude != null && initialLongitude != null ? { latitude: initialLatitude, longitude: initialLongitude } : null;
+  const initialLocation = searchParams.get("location") || (initialCoordinates ? "Min plats" : "");
   const sportId: SportId = searchParams.get("sport") === "5" ? "5" : "1";
   const [selectedDate, setSelectedDate] = useState(initialDate);
   const [selectedTime, setSelectedTime] = useState(searchParams.get("time") || "18:00");
   const [duration, setDuration] = useState(searchParams.get("duration") || "60");
-  const [facilitiesData, setFacilitiesData] = useState<MatchiFacilityMapResponse | null>(null);
+  const [facilitiesByKey, setFacilitiesByKey] = useState<Map<string, MatchiFacilitySummary>>(() => new Map());
   const [availabilityData, setAvailabilityData] = useState<AvailabilityResponse | null>(null);
-  const [loadingFacilities, setLoadingFacilities] = useState(true);
+  const [activeFacilityRequests, setActiveFacilityRequests] = useState(0);
   const [loadingAvailability, setLoadingAvailability] = useState(false);
   const [facilityError, setFacilityError] = useState<string | null>(null);
   const [availabilityError, setAvailabilityError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [viewport, setViewport] = useState<CourtMapViewport | null>(null);
-  const didSearchInitialViewport = useRef(false);
-  const initialMapView = useMemo(() => initialViewForLocation(initialLocation), [initialLocation]);
-  const [searchRequest, setSearchRequest] = useState<MapSearchRequest>(() => ({
-    id: 0,
-    date: initialDate,
-    label: initialLocation,
-    pending: shouldAutoSearch && initialMapView != null,
-    query: shouldAutoSearch && initialMapView != null ? undefined : initialLocation,
-  }));
+  const loadedBoundsRef = useRef<FacilityBounds[]>([]);
+  const pendingBoundsRef = useRef<BoundsRequest[]>([]);
+  const initialMapView = useMemo(
+    () => initialViewForLocation(initialLocation, initialLatitude, initialLongitude),
+    [initialLatitude, initialLongitude, initialLocation],
+  );
+  const needsInitialTextSearch = Boolean(initialLocation.trim() && !initialCoordinates && !initialMapView);
+  const initialTextSearchSettledRef = useRef(!needsInitialTextSearch);
+  const loadingFacilities = activeFacilityRequests > 0;
+  const mapAreaLabel = initialCoordinates ? "Nära min plats" : initialLocation || "Centrala Stockholm";
+  const facilities = useMemo(() => Array.from(facilitiesByKey.values()), [facilitiesByKey]);
+
+  const mergeFacilities = useCallback((nextFacilities: MatchiFacilitySummary[]) => {
+    setFacilitiesByKey((current) => {
+      const next = new Map(current);
+      for (const facility of nextFacilities) {
+        next.set(facilityKey(facility), facility);
+      }
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
-    if (searchRequest.pending) return;
+    for (const request of pendingBoundsRef.current) {
+      request.controller.abort();
+    }
+    pendingBoundsRef.current = [];
+    loadedBoundsRef.current = [];
+    initialTextSearchSettledRef.current = !needsInitialTextSearch;
+    setFacilitiesByKey(new Map());
+    setSelectedId(null);
+    setAvailabilityData(null);
+    setFacilityError(null);
+    setActiveFacilityRequests(0);
+  }, [needsInitialTextSearch, selectedDate, sportId]);
 
+  useEffect(() => {
+    return () => {
+      for (const request of pendingBoundsRef.current) {
+        request.controller.abort();
+      }
+      pendingBoundsRef.current = [];
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!needsInitialTextSearch) return;
+
+    initialTextSearchSettledRef.current = false;
     const controller = new AbortController();
     const params = new URLSearchParams({
-      date: searchRequest.date,
+      date: selectedDate,
+      q: initialLocation,
       sport: sportId,
       offset: "0",
       limit: "20",
     });
-    if (searchRequest.query) params.set("q", searchRequest.query);
-    if (searchRequest.center) {
-      params.set("lat", String(searchRequest.center.latitude));
-      params.set("lng", String(searchRequest.center.longitude));
-    }
-    if (searchRequest.bounds) {
-      params.set("north", String(searchRequest.bounds.north));
-      params.set("south", String(searchRequest.bounds.south));
-      params.set("east", String(searchRequest.bounds.east));
-      params.set("west", String(searchRequest.bounds.west));
-    }
 
-    setLoadingFacilities(true);
+    setActiveFacilityRequests((count) => count + 1);
     setFacilityError(null);
     fetch(`/api/matchi/facilities?${params.toString()}`, {
       signal: controller.signal,
@@ -98,22 +131,84 @@ export default function MapView() {
         return response.json() as Promise<MatchiFacilityMapResponse>;
       })
       .then((payload) => {
-        setFacilitiesData(payload);
-        setSelectedId(null);
-        setAvailabilityData(null);
+        mergeFacilities(payload.facilities);
       })
       .catch((err) => {
         if (err instanceof DOMException && err.name === "AbortError") return;
         setFacilityError(err instanceof Error ? err.message : String(err));
       })
-      .finally(() => setLoadingFacilities(false));
+      .finally(() => {
+        initialTextSearchSettledRef.current = true;
+        setActiveFacilityRequests((count) => Math.max(0, count - 1));
+      });
 
     return () => controller.abort();
-  }, [searchRequest, sportId]);
+  }, [initialLocation, mergeFacilities, needsInitialTextSearch, selectedDate, sportId]);
+
+  useEffect(() => {
+    if (!viewport) return;
+    if (needsInitialTextSearch && !initialTextSearchSettledRef.current) return;
+
+    const timer = window.setTimeout(() => {
+      const targetBounds = viewport.bounds;
+      const coveredBounds = [
+        ...loadedBoundsRef.current,
+        ...pendingBoundsRef.current.map((request) => request.bounds),
+      ];
+      const missingBounds = subtractCoveredBounds(targetBounds, coveredBounds);
+      if (!missingBounds.length) return;
+
+      for (const bounds of missingBounds) {
+        const controller = new AbortController();
+        pendingBoundsRef.current.push({ bounds, controller });
+        const center = boundsCenter(bounds);
+        const params = new URLSearchParams({
+          date: selectedDate,
+          sport: sportId,
+          offset: "0",
+          limit: "20",
+          lat: String(center.latitude),
+          lng: String(center.longitude),
+          north: String(bounds.north),
+          south: String(bounds.south),
+          east: String(bounds.east),
+          west: String(bounds.west),
+        });
+
+        setActiveFacilityRequests((count) => count + 1);
+        setFacilityError(null);
+        fetch(`/api/matchi/facilities?${params.toString()}`, {
+          signal: controller.signal,
+          cache: "no-store",
+        })
+          .then(async (response) => {
+            if (!response.ok) {
+              const body = (await response.json().catch(() => null)) as { message?: string } | null;
+              throw new Error(body?.message || `Kunde inte hämta klubbar (${response.status})`);
+            }
+            return response.json() as Promise<MatchiFacilityMapResponse>;
+          })
+          .then((payload) => {
+            loadedBoundsRef.current.push(bounds);
+            mergeFacilities(payload.facilities);
+          })
+          .catch((err) => {
+            if (err instanceof DOMException && err.name === "AbortError") return;
+            setFacilityError(err instanceof Error ? err.message : String(err));
+          })
+          .finally(() => {
+            pendingBoundsRef.current = pendingBoundsRef.current.filter((request) => request.controller !== controller);
+            setActiveFacilityRequests((count) => Math.max(0, count - 1));
+          });
+      }
+    }, AUTO_SEARCH_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [mergeFacilities, needsInitialTextSearch, selectedDate, sportId, viewport]);
 
   const selectedFacility = useMemo(() => {
-    return (facilitiesData?.facilities ?? []).find((facility) => facility.slug === selectedId) ?? null;
-  }, [facilitiesData, selectedId]);
+    return facilities.find((facility) => facility.slug === selectedId) ?? null;
+  }, [facilities, selectedId]);
 
   useEffect(() => {
     if (!selectedFacility) {
@@ -158,28 +253,14 @@ export default function MapView() {
   }, [availabilityData, duration, selectedTime]);
 
   const points = useMemo<CourtMapPoint[]>(() => {
-    return (facilitiesData?.facilities ?? [])
+    return facilities
       .map((facility) => toMapPoint(facility, selectedFacility?.slug === facility.slug ? selectedOptions : []))
       .filter((point): point is CourtMapPoint => point != null);
-  }, [facilitiesData, selectedFacility, selectedOptions]);
+  }, [facilities, selectedFacility, selectedOptions]);
 
   const updateViewport = useCallback((nextViewport: CourtMapViewport) => {
     setViewport(nextViewport);
   }, []);
-
-  useEffect(() => {
-    if (!shouldAutoSearch || !viewport || didSearchInitialViewport.current) return;
-    if (!initialMapView && (loadingFacilities || points.length === 0)) return;
-
-    didSearchInitialViewport.current = true;
-    setSearchRequest({
-      id: Date.now(),
-      date: selectedDate,
-      label: initialLocation || "Stockholm",
-      center: viewport.center,
-      bounds: viewport.bounds,
-    });
-  }, [initialLocation, initialMapView, loadingFacilities, points.length, selectedDate, shouldAutoSearch, viewport]);
 
   function closeMap() {
     const params = new URLSearchParams({
@@ -190,18 +271,11 @@ export default function MapView() {
       duration,
     });
     if (initialLocation) params.set("location", initialLocation);
+    if (initialCoordinates) {
+      params.set("lat", String(initialCoordinates.latitude));
+      params.set("lng", String(initialCoordinates.longitude));
+    }
     router.push(`/search?${params.toString()}`);
-  }
-
-  function searchVisibleArea() {
-    if (!viewport) return;
-    setSearchRequest({
-      id: Date.now(),
-      date: selectedDate,
-      label: "Synligt område",
-      center: viewport.center,
-      bounds: viewport.bounds,
-    });
   }
 
   return (
@@ -219,10 +293,6 @@ export default function MapView() {
       />
 
       <div className="map-actions">
-        <button className="map-action primary" disabled={!viewport || loadingFacilities} onClick={searchVisibleArea} type="button">
-          <Search size={16} />
-          Sök i området
-        </button>
         <button className="map-action" onClick={closeMap} type="button">
           <X size={16} />
           Stäng
@@ -233,7 +303,7 @@ export default function MapView() {
         <div className="map-area-summary">
           <p className="eyebrow">Kartvy</p>
           <strong>{loadingFacilities ? "Hämtar klubbar" : `${points.length} klubbar`}</strong>
-          <span>{searchRequest.label}</span>
+          <span>{mapAreaLabel}</span>
           {facilityError ? <small>{facilityError}</small> : null}
         </div>
       ) : null}
@@ -299,7 +369,14 @@ export default function MapView() {
   );
 }
 
-function initialViewForLocation(location: string) {
+function initialViewForLocation(location: string, latitude: number | null, longitude: number | null) {
+  if (latitude != null && longitude != null) {
+    return {
+      center: { latitude, longitude },
+      zoom: 13,
+    };
+  }
+  if (!location.trim()) return STOCKHOLM_INITIAL_VIEW;
   return normalizeLocation(location).includes("stockholm") ? STOCKHOLM_INITIAL_VIEW : null;
 }
 
@@ -309,6 +386,100 @@ function normalizeLocation(location: string) {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
+}
+
+function parseFiniteNumber(value: string | null) {
+  if (!value) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function facilityKey(facility: MatchiFacilitySummary) {
+  return `${facility.sportId}:${facility.slug}`;
+}
+
+function subtractCoveredBounds(target: FacilityBounds, coveredBounds: FacilityBounds[]) {
+  if (target.west > target.east) return [target];
+
+  let remaining = [target];
+  for (const covered of coveredBounds) {
+    if (covered.west > covered.east) continue;
+    remaining = remaining.flatMap((bounds) => subtractBounds(bounds, covered));
+    if (!remaining.length) break;
+  }
+
+  const targetArea = boundsArea(target);
+  return remaining.filter((bounds) => boundsArea(bounds) > Math.max(0.00002, targetArea * 0.015));
+}
+
+function subtractBounds(target: FacilityBounds, covered: FacilityBounds): FacilityBounds[] {
+  const intersection = intersectBounds(target, covered);
+  if (!intersection) return [target];
+
+  const pieces: FacilityBounds[] = [];
+  if (target.north > intersection.north) {
+    pieces.push({
+      north: target.north,
+      south: intersection.north,
+      west: target.west,
+      east: target.east,
+    });
+  }
+  if (intersection.south > target.south) {
+    pieces.push({
+      north: intersection.south,
+      south: target.south,
+      west: target.west,
+      east: target.east,
+    });
+  }
+  if (target.west < intersection.west) {
+    pieces.push({
+      north: intersection.north,
+      south: intersection.south,
+      west: target.west,
+      east: intersection.west,
+    });
+  }
+  if (intersection.east < target.east) {
+    pieces.push({
+      north: intersection.north,
+      south: intersection.south,
+      west: intersection.east,
+      east: target.east,
+    });
+  }
+
+  return pieces.filter((bounds) => bounds.north > bounds.south && bounds.east > bounds.west);
+}
+
+function intersectBounds(left: FacilityBounds, right: FacilityBounds): FacilityBounds | null {
+  const north = Math.min(left.north, right.north);
+  const south = Math.max(left.south, right.south);
+  const west = Math.max(left.west, right.west);
+  const east = Math.min(left.east, right.east);
+
+  if (north <= south || east <= west) return null;
+  return { north, south, west, east };
+}
+
+function boundsCenter(bounds: FacilityBounds): Coordinates {
+  return {
+    latitude: (bounds.north + bounds.south) / 2,
+    longitude: normalizeLongitude((bounds.east + bounds.west) / 2),
+  };
+}
+
+function boundsArea(bounds: FacilityBounds) {
+  return Math.max(0, bounds.north - bounds.south) * Math.max(0, longitudeSpan(bounds));
+}
+
+function longitudeSpan(bounds: FacilityBounds) {
+  return bounds.west <= bounds.east ? bounds.east - bounds.west : 180 - bounds.west + bounds.east + 180;
+}
+
+function normalizeLongitude(longitude: number) {
+  return ((((longitude + 180) % 360) + 360) % 360) - 180;
 }
 
 function toMapPoint(facility: MatchiFacilitySummary, options: MatchiAvailabilityOption[]): CourtMapPoint | null {

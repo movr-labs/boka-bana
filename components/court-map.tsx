@@ -217,7 +217,7 @@ export default function CourtMap({
               <span className="court-map-pin" />
               {variant === "full" ? (
                 <span className="court-map-marker-label">
-                  <strong>{point.firstTime ?? "Klubb"}</strong>
+                  <strong>{point.name}</strong>
                   <span>{point.optionsCount != null ? `${point.optionsCount} tider` : point.city ?? ""}</span>
                 </span>
               ) : null}

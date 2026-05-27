@@ -13,7 +13,10 @@ export async function GET(request: Request) {
   const offset = Number(url.searchParams.get("offset") || 0);
   const limit = Number(url.searchParams.get("limit") || 10);
   const includeCoordinates = url.searchParams.get("includeCoordinates") === "1";
-  const query = includeCoordinates && !rawQuery.trim() ? "Stockholm" : rawQuery;
+  const latitude = parseFiniteNumber(url.searchParams.get("lat"));
+  const longitude = parseFiniteNumber(url.searchParams.get("lng"));
+  const hasCoordinates = latitude != null && longitude != null;
+  const query = includeCoordinates && !rawQuery.trim() && !hasCoordinates ? "Stockholm" : rawQuery;
   const time = url.searchParams.get("time") || undefined;
   const duration = Number(url.searchParams.get("duration") || 0);
 
@@ -32,6 +35,8 @@ export async function GET(request: Request) {
       sportId,
       offset,
       limit,
+      latitude,
+      longitude,
       includeCoordinates,
       coordinateWindow:
         includeCoordinates && time
@@ -51,4 +56,10 @@ export async function GET(request: Request) {
     const matchiStatus = Number(message.match(/Matchi request failed \((\d+)\)/)?.[1]);
     return NextResponse.json({ message }, { status: matchiStatus === 429 ? 429 : 502 });
   }
+}
+
+function parseFiniteNumber(value: string | null) {
+  if (!value) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }

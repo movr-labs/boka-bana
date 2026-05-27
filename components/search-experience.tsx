@@ -18,6 +18,11 @@ type Filters = {
 
 type SportId = "1" | "5";
 
+type Coordinates = {
+  latitude: number;
+  longitude: number;
+};
+
 type FacilityCard = {
   facility: MatchiFacilitySummary;
   options: MatchiAvailabilityOption[];
@@ -237,9 +242,17 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialDate = searchParams.get("date");
+  const initialLatitude = parseFiniteNumber(searchParams.get("lat"));
+  const initialLongitude = parseFiniteNumber(searchParams.get("lng"));
+  const initialCoordinates =
+    initialLatitude != null && initialLongitude != null ? { latitude: initialLatitude, longitude: initialLongitude } : null;
+  const initialLocationLabel = searchParams.get("location") || (initialCoordinates ? "Min plats" : "");
   const [date, setDate] = useState(initialDate ? normalizeSearchDate(initialDate) : tomorrowISO());
-  const [location, setLocation] = useState(searchParams.get("location") || "");
-  const [submittedQuery, setSubmittedQuery] = useState(searchParams.get("location") || "");
+  const [location, setLocation] = useState(initialLocationLabel);
+  const [submittedQuery, setSubmittedQuery] = useState(initialLocationLabel);
+  const [userCoordinates, setUserCoordinates] = useState<Coordinates | null>(initialCoordinates);
+  const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
   const [sportId, setSportId] = useState<SportId>(searchParams.get("sport") === "5" ? "5" : "1");
   const [time, setTime] = useState(searchParams.get("time") || "18:00");
   const [duration, setDuration] = useState(searchParams.get("duration") || "60");
@@ -249,6 +262,7 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
   const [directorySummary, setDirectorySummary] = useState<DirectorySummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const coordinateKey = userCoordinates ? `${userCoordinates.latitude.toFixed(6)}:${userCoordinates.longitude.toFixed(6)}` : "";
 
   useEffect(() => {
     if (home) {
@@ -261,11 +275,15 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
     setError(null);
     const params = new URLSearchParams({
       date,
-      q: submittedQuery,
+      q: userCoordinates ? "" : submittedQuery,
       sport: sportId,
       offset: String(offset),
       limit: String(PAGE_SIZE),
     });
+    if (userCoordinates) {
+      params.set("lat", String(userCoordinates.latitude));
+      params.set("lng", String(userCoordinates.longitude));
+    }
     fetch(`/api/matchi/availability?${params.toString()}`, {
       signal: controller.signal,
       cache: "no-store",
@@ -284,7 +302,7 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
       })
       .finally(() => setLoading(false));
     return () => controller.abort();
-  }, [date, home, offset, sportId, submittedQuery]);
+  }, [coordinateKey, date, home, offset, sportId, submittedQuery, userCoordinates]);
 
   useEffect(() => {
     if (!home) return;
@@ -376,6 +394,7 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
     nextDuration?: string;
     nextOffset?: number;
     nextQuery?: string;
+    nextCoordinates?: Coordinates | null;
     nextSportId?: SportId;
     nextTime?: string;
   }) {
@@ -386,17 +405,73 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
     });
     params.set("time", input.nextTime ?? time);
     params.set("duration", input.nextDuration ?? duration);
+    const nextCoordinates = input.nextCoordinates === undefined ? userCoordinates : input.nextCoordinates;
     const query = input.nextQuery ?? submittedQuery;
     if (query) params.set("location", query);
+    if (nextCoordinates) {
+      params.set("lat", String(nextCoordinates.latitude));
+      params.set("lng", String(nextCoordinates.longitude));
+    }
     return `/search?${params.toString()}`;
   }
 
   function searchForQuery(query: string) {
     const nextQuery = query.trim();
+    setUserCoordinates(null);
+    setLocationError(null);
     setLocation(nextQuery);
     setSubmittedQuery(nextQuery);
     setOffset(0);
-    router.push(buildSearchUrl({ nextOffset: 0, nextQuery }));
+    router.push(buildSearchUrl({ nextCoordinates: null, nextOffset: 0, nextQuery }));
+  }
+
+  function updateLocationInput(nextLocation: string) {
+    setLocation(nextLocation);
+    if (userCoordinates) {
+      setUserCoordinates(null);
+    }
+    if (locationError) {
+      setLocationError(null);
+    }
+  }
+
+  function useCurrentLocation() {
+    if (!navigator.geolocation) {
+      setLocationError("Din webbläsare stödjer inte platsdelning.");
+      return;
+    }
+
+    setLocating(true);
+    setLocationError(null);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const nextCoordinates = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        };
+        setUserCoordinates(nextCoordinates);
+        setLocation("Min plats");
+        setSubmittedQuery("Min plats");
+        setOffset(0);
+        setLocating(false);
+        router.push(buildSearchUrl({ nextCoordinates, nextOffset: 0, nextQuery: "Min plats" }));
+      },
+      (error) => {
+        const message =
+          error.code === error.PERMISSION_DENIED
+            ? "Platsåtkomst nekades."
+            : error.code === error.TIMEOUT
+              ? "Det tog för lång tid att hämta din plats."
+              : "Kunde inte hämta din plats.";
+        setLocationError(message);
+        setLocating(false);
+      },
+      {
+        enableHighAccuracy: false,
+        maximumAge: 60_000,
+        timeout: 10_000,
+      },
+    );
   }
 
   function openMapView() {
@@ -407,8 +482,12 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
       duration,
       autoSearch: "1",
     });
-    const query = location.trim() || submittedQuery || "Stockholm";
-    params.set("location", query);
+    const query = location.trim() || submittedQuery;
+    if (query) params.set("location", query);
+    if (userCoordinates) {
+      params.set("lat", String(userCoordinates.latitude));
+      params.set("lng", String(userCoordinates.longitude));
+    }
     router.push(`/map?${params.toString()}`);
   }
 
@@ -445,13 +524,15 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
               </div>
 
               <div className="landing-search-grid" role="search">
-                <LandingField label="Plats" icon={<MapPin size={18} />}>
-                  <input
-                    value={location}
-                    onChange={(event) => setLocation(event.target.value)}
-                    placeholder="Stad eller klubbnamn"
-                  />
-                </LandingField>
+                <LocationField
+                  locating={locating}
+                  locationError={locationError}
+                  onChange={updateLocationInput}
+                  onUseCurrentLocation={useCurrentLocation}
+                  placeholder="Stad eller klubbnamn"
+                  value={location}
+                  variant="landing"
+                />
                 <LandingField label="Datum" icon={<Calendar size={18} />}>
                   <input min={todayISO()} type="date" value={date} onChange={(event) => updateDate(event.target.value)} />
                 </LandingField>
@@ -650,14 +731,15 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
             <p className="eyebrow light">Tennis & padel</p>
             <h1>Lediga banor, samma dag.</h1>
             <div className="hero-panel" role="search">
-              <div className="field">
-                <MapPin size={18} />
-                <input
-                  value={location}
-                  onChange={(event) => setLocation(event.target.value)}
-                  placeholder="Sök klubb eller stad"
-                />
-              </div>
+              <LocationField
+                locating={locating}
+                locationError={locationError}
+                onChange={updateLocationInput}
+                onUseCurrentLocation={useCurrentLocation}
+                placeholder="Sök klubb eller stad"
+                value={location}
+                variant="inline"
+              />
               <div className="field compact">
                 <Calendar size={18} />
                 <input min={todayISO()} type="date" value={date} onChange={(event) => updateDate(event.target.value)} />
@@ -681,14 +763,15 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
               </button>
             </div>
             <div className="search-box">
-              <div className="field">
-                <MapPin size={17} />
-                <input
-                  value={location}
-                  onChange={(event) => setLocation(event.target.value)}
-                  placeholder="Sök klubb eller stad"
-                />
-              </div>
+              <LocationField
+                locating={locating}
+                locationError={locationError}
+                onChange={updateLocationInput}
+                onUseCurrentLocation={useCurrentLocation}
+                placeholder="Sök klubb eller stad"
+                value={location}
+                variant="inline"
+              />
               <div className="field compact">
                 <Calendar size={17} />
                 <input min={todayISO()} type="date" value={date} onChange={(event) => updateDate(event.target.value)} />
@@ -882,6 +965,59 @@ function RadioOption({ label, active, onClick }: { label: string; active: boolea
   );
 }
 
+function LocationField({
+  locating,
+  locationError,
+  onChange,
+  onUseCurrentLocation,
+  placeholder,
+  value,
+  variant,
+}: {
+  locating: boolean;
+  locationError: string | null;
+  onChange: (value: string) => void;
+  onUseCurrentLocation: () => void;
+  placeholder: string;
+  value: string;
+  variant: "landing" | "inline";
+}) {
+  const [open, setOpen] = useState(false);
+  const isLanding = variant === "landing";
+
+  return (
+    <div
+      className={`${isLanding ? "landing-field" : "field"} location-field`}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setOpen(false);
+        }
+      }}
+      onFocusCapture={() => setOpen(true)}
+    >
+      <MapPin size={isLanding ? 18 : 17} />
+      <span className={isLanding ? "landing-field-body" : "location-field-body"}>
+        {isLanding ? <span className="eyebrow">Plats</span> : null}
+        <input
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          onClick={() => setOpen(true)}
+          placeholder={placeholder}
+        />
+      </span>
+      {open ? (
+        <div className="location-menu">
+          <button disabled={locating} onClick={onUseCurrentLocation} type="button">
+            <MapPin size={15} />
+            {locating ? "Hämtar position..." : "Använd min plats"}
+          </button>
+          {locationError ? <small>{locationError}</small> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function LandingField({ label, icon, children }: { label: string; icon: ReactNode; children: ReactNode }) {
   return (
     <label className="landing-field">
@@ -892,4 +1028,10 @@ function LandingField({ label, icon, children }: { label: string; icon: ReactNod
       </span>
     </label>
   );
+}
+
+function parseFiniteNumber(value: string | null) {
+  if (!value) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }

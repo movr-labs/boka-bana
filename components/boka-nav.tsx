@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { CalendarDays, LogOut, UserRound } from "lucide-react";
+import { CalendarDays, Dumbbell, LogOut, Search, Trophy, UserRound } from "lucide-react";
 
 type PublicUser = {
   id: string;
@@ -20,6 +20,7 @@ export default function BokaNav({
 }) {
   const [user, setUser] = useState<PublicUser | null>(null);
   const logoSrc = variant === "on-dark" ? "/bb-logo-white.png?v=20260528" : "/bb-logo.png?v=20260528";
+  const searchActive = current === "search" || current === "home";
 
   useEffect(() => {
     let active = true;
@@ -48,28 +49,51 @@ export default function BokaNav({
         <Image src={logoSrc} alt="Bokabana" className="brand-logo" width={153} height={102} priority />
       </Link>
       <nav className="nav-links" aria-label="Huvudmeny">
-        <Link className={current === "search" || current === "home" ? "active" : ""} href="/search">
-          Sök bana
+        <Link
+          className={searchActive ? "active" : ""}
+          href="/search"
+          aria-current={current === "search" ? "page" : undefined}
+        >
+          <Search size={16} />
+          <span>Sök bana</span>
         </Link>
-        <Link className={current === "trainers" ? "active" : ""} href="/tranare">
-          Sök tränare
+        <Link
+          className={current === "trainers" ? "active" : ""}
+          href="/tranare"
+          aria-current={current === "trainers" ? "page" : undefined}
+        >
+          <Dumbbell size={16} />
+          <span>Sök tränare</span>
         </Link>
-        <Link className={current === "tournaments" ? "active" : ""} href="/tavlingar">
-          Tävlingar
+        <Link
+          className={current === "tournaments" ? "active" : ""}
+          href="/tavlingar"
+          aria-current={current === "tournaments" ? "page" : undefined}
+        >
+          <Trophy size={16} />
+          <span>Tävlingar</span>
         </Link>
-        <Link className={current === "bookings" ? "active" : ""} href="/bookings">
+        <Link
+          className={current === "bookings" ? "active" : ""}
+          href="/bookings"
+          aria-current={current === "bookings" ? "page" : undefined}
+        >
           <CalendarDays size={16} />
-          Mina bokningar
+          <span>Mina bokningar</span>
         </Link>
         {user ? (
           <button className="nav-user nav-button" onClick={logout} type="button">
             <LogOut size={16} />
-            {user.name}
+            <span>{user.name}</span>
           </button>
         ) : (
-          <Link className={current === "login" ? "active" : "nav-user"} href="/login">
+          <Link
+            className={current === "login" ? "nav-user active" : "nav-user"}
+            href="/login"
+            aria-current={current === "login" ? "page" : undefined}
+          >
             <UserRound size={16} />
-            Logga in
+            <span>Logga in</span>
           </Link>
         )}
       </nav>

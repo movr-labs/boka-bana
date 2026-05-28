@@ -1,3 +1,5 @@
+import path from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import type {
   AvailabilityResponse,
   MatchiAvailabilityOption,
@@ -15,7 +17,10 @@ const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 20;
 const DIRECTORY_PAGE_LIMIT = MAX_LIMIT;
 const MAX_DIRECTORY_PAGES = 30;
-const MAX_BOUNDS_SEARCH_PAGES_PER_POINT = 5;
+const MAX_BOUNDS_SEARCH_PAGES_PER_POINT = 3;
+const FAST_BOUNDS_SEARCH_PAGES_PER_POINT = 1;
+const FAST_BOUNDS_MAX_SPAN = 0.25;
+const MEDIUM_BOUNDS_MAX_SPAN = 0.5;
 const BOUNDS_SEARCH_CONCURRENCY = 3;
 const COORDINATE_FETCH_CONCURRENCY = 6;
 const AVAILABILITY_FETCH_CONCURRENCY = 3;
@@ -24,6 +29,7 @@ const COORDINATE_CACHE_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 const MISSING_COORDINATE_CACHE_TTL_MS = 1000 * 60 * 60;
 const MATCHI_MAX_RETRIES = 3;
 const MATCHI_RETRY_BASE_DELAY_MS = 700;
+const COORDINATE_CACHE_FILE = path.join(process.cwd(), ".data", "matchi-coordinate-cache.json");
 
 const SPORTS = {
   "1": "Tennis",
@@ -81,6 +87,8 @@ type FacilityBounds = {
   west: number;
 };
 
+type BoundsSearchPointMode = "center" | "cross" | "grid";
+
 type CoordinateCacheEntry = {
   latitude: number | null;
   longitude: number | null;
@@ -89,6 +97,8 @@ type CoordinateCacheEntry = {
 
 const facilityCoordinateCache = new Map<string, CoordinateCacheEntry>();
 const mapSearchCache = new Map<string, { expiresAt: number; payload: MatchiFacilityMapResponse }>();
+let didLoadPersistentCoordinateCache = false;
+let coordinateCacheWriteTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function listMatchiFacilities() {
   return FALLBACK_FACILITIES.map((facility) => ({ ...facility }));
@@ -513,12 +523,13 @@ async function findMatchiFacilitiesInBounds(input: {
   center: FacilitySearchPoint | null;
 }): Promise<FacilitySearchResult> {
   const bySlug = new Map<string, MatchiFacilitySummary>();
-  const points = buildBoundsSearchPoints(input.bounds, input.center);
+  const budget = boundsSearchBudget(input.bounds);
+  const points = buildBoundsSearchPoints(input.bounds, input.center, budget.pointMode);
 
   const results = await mapConcurrent(points, BOUNDS_SEARCH_CONCURRENCY, async (point) => {
     const facilities: MatchiFacilitySummary[] = [];
 
-    for (let page = 0; page < MAX_BOUNDS_SEARCH_PAGES_PER_POINT; page += 1) {
+    for (let page = 0; page < budget.maxPagesPerPoint; page += 1) {
       const offset = page * MAX_LIMIT;
       const result = await findMatchiFacilities({
         query: "",
@@ -609,6 +620,7 @@ async function enrichFacilitiesWithCoordinates(
 }
 
 async function fetchFacilityCoordinates(slug: string, date: string, sportId: string) {
+  await loadPersistentCoordinateCache();
   const cacheKey = `${sportId}:${slug}`;
   const cached = facilityCoordinateCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
@@ -628,6 +640,7 @@ async function fetchFacilityCoordinates(slug: string, date: string, sportId: str
       ...coordinates,
       expiresAt: Date.now() + (hasCoordinates ? COORDINATE_CACHE_TTL_MS : MISSING_COORDINATE_CACHE_TTL_MS),
     });
+    scheduleCoordinateCacheWrite();
     return coordinates;
   } catch {
     return {
@@ -635,6 +648,75 @@ async function fetchFacilityCoordinates(slug: string, date: string, sportId: str
       longitude: null,
     };
   }
+}
+
+async function loadPersistentCoordinateCache() {
+  if (didLoadPersistentCoordinateCache) return;
+  didLoadPersistentCoordinateCache = true;
+
+  try {
+    const raw = await readFile(COORDINATE_CACHE_FILE, "utf8");
+    const parsed = JSON.parse(raw) as { entries?: Record<string, CoordinateCacheEntry> };
+    const entries = parsed.entries ?? {};
+    const now = Date.now();
+
+    for (const [key, entry] of Object.entries(entries)) {
+      if (!isCoordinateCacheEntry(entry) || entry.expiresAt <= now) continue;
+      facilityCoordinateCache.set(key, entry);
+    }
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") return;
+  }
+}
+
+function scheduleCoordinateCacheWrite() {
+  if (coordinateCacheWriteTimer) {
+    clearTimeout(coordinateCacheWriteTimer);
+  }
+
+  coordinateCacheWriteTimer = setTimeout(() => {
+    coordinateCacheWriteTimer = null;
+    void writePersistentCoordinateCache();
+  }, 750);
+}
+
+async function writePersistentCoordinateCache() {
+  const now = Date.now();
+  const entries = Object.fromEntries(
+    Array.from(facilityCoordinateCache.entries())
+      .filter(([, entry]) => entry.expiresAt > now)
+      .sort(([left], [right]) => left.localeCompare(right)),
+  );
+
+  try {
+    await mkdir(path.dirname(COORDINATE_CACHE_FILE), { recursive: true });
+    await writeFile(
+      COORDINATE_CACHE_FILE,
+      `${JSON.stringify(
+        {
+          version: 1,
+          entries,
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+  } catch {
+    // Persistent caching is an optimization; map loading should still work without disk writes.
+  }
+}
+
+function isCoordinateCacheEntry(value: unknown): value is CoordinateCacheEntry {
+  if (!value || typeof value !== "object") return false;
+  const entry = value as CoordinateCacheEntry;
+  const hasLatitude = entry.latitude == null || typeof entry.latitude === "number";
+  const hasLongitude = entry.longitude == null || typeof entry.longitude === "number";
+  return hasLatitude && hasLongitude && typeof entry.expiresAt === "number";
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return Boolean(error && typeof error === "object" && "code" in error);
 }
 
 async function fetchFacilitySlots(input: {
@@ -961,18 +1043,56 @@ function facilityIsInBounds(facility: MatchiFacilitySummary, bounds: FacilityBou
   return latitudeMatches && longitudeMatches;
 }
 
-function buildBoundsSearchPoints(bounds: FacilityBounds, center: FacilitySearchPoint | null) {
+function boundsSearchBudget(bounds: FacilityBounds): {
+  maxPagesPerPoint: number;
+  pointMode: BoundsSearchPointMode;
+} {
+  const span = Math.max(bounds.north - bounds.south, longitudeSpan(bounds));
+  if (span <= FAST_BOUNDS_MAX_SPAN) {
+    return {
+      maxPagesPerPoint: FAST_BOUNDS_SEARCH_PAGES_PER_POINT,
+      pointMode: "center",
+    };
+  }
+
+  if (span <= MEDIUM_BOUNDS_MAX_SPAN) {
+    return {
+      maxPagesPerPoint: FAST_BOUNDS_SEARCH_PAGES_PER_POINT,
+      pointMode: "cross",
+    };
+  }
+
+  return {
+    maxPagesPerPoint: MAX_BOUNDS_SEARCH_PAGES_PER_POINT,
+    pointMode: "grid",
+  };
+}
+
+function buildBoundsSearchPoints(bounds: FacilityBounds, center: FacilitySearchPoint | null, mode: BoundsSearchPointMode) {
   const latitudePadding = Math.max(0.01, (bounds.north - bounds.south) * 0.08);
   const south = clampLatitude(bounds.south + latitudePadding);
   const north = clampLatitude(bounds.north - latitudePadding);
   const middleLatitude = clampLatitude(center?.latitude ?? (bounds.north + bounds.south) / 2);
   const longitudeValues = buildLongitudeSamples(bounds, center?.longitude ?? midpointLongitude(bounds.west, bounds.east));
+  const middleLongitude = longitudeValues[1] ?? midpointLongitude(bounds.west, bounds.east);
   const candidates: FacilitySearchPoint[] = [];
 
-  if (center) candidates.push(center);
-  for (const latitude of [south, middleLatitude, north]) {
-    for (const longitude of longitudeValues) {
-      candidates.push({ latitude, longitude });
+  candidates.push(center ?? { latitude: middleLatitude, longitude: middleLongitude });
+
+  if (mode === "cross") {
+    candidates.push(
+      { latitude: south, longitude: middleLongitude },
+      { latitude: north, longitude: middleLongitude },
+      { latitude: middleLatitude, longitude: longitudeValues[0] ?? middleLongitude },
+      { latitude: middleLatitude, longitude: longitudeValues[2] ?? middleLongitude },
+    );
+  }
+
+  if (mode === "grid") {
+    for (const latitude of [south, middleLatitude, north]) {
+      for (const longitude of longitudeValues) {
+        candidates.push({ latitude, longitude });
+      }
     }
   }
 
@@ -1005,6 +1125,10 @@ function buildLongitudeSamples(bounds: FacilityBounds, centerLongitude: number) 
 function midpointLongitude(west: number, east: number) {
   if (west <= east) return normalizeLongitude((west + east) / 2);
   return normalizeLongitude(west + (180 - west + east + 180) / 2);
+}
+
+function longitudeSpan(bounds: FacilityBounds) {
+  return bounds.west <= bounds.east ? bounds.east - bounds.west : 180 - bounds.west + bounds.east + 180;
 }
 
 function clampLatitude(latitude: number) {

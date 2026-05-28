@@ -37,6 +37,7 @@ const STOCKHOLM_INITIAL_VIEW = {
 };
 
 const AUTO_SEARCH_DEBOUNCE_MS = 450;
+const MIN_AUTO_SEARCH_ZOOM = 11;
 
 export default function MapView() {
   const router = useRouter();
@@ -69,6 +70,7 @@ export default function MapView() {
   const initialTextSearchSettledRef = useRef(!needsInitialTextSearch);
   const loadingFacilities = activeFacilityRequests > 0;
   const mapAreaLabel = initialCoordinates ? "Nära min plats" : initialLocation || "Centrala Stockholm";
+  const isZoomedOutForSearch = Boolean(viewport && viewport.zoom < MIN_AUTO_SEARCH_ZOOM);
   const facilities = useMemo(() => Array.from(facilitiesByKey.values()), [facilitiesByKey]);
 
   const mergeFacilities = useCallback((nextFacilities: MatchiFacilitySummary[]) => {
@@ -148,6 +150,7 @@ export default function MapView() {
   useEffect(() => {
     if (!viewport) return;
     if (needsInitialTextSearch && !initialTextSearchSettledRef.current) return;
+    if (viewport.zoom < MIN_AUTO_SEARCH_ZOOM) return;
 
     const timer = window.setTimeout(() => {
       const targetBounds = viewport.bounds;
@@ -302,8 +305,9 @@ export default function MapView() {
       {!selectedFacility ? (
         <div className="map-area-summary">
           <p className="eyebrow">Kartvy</p>
-          <strong>{loadingFacilities ? "Hämtar klubbar" : `${points.length} klubbar`}</strong>
+          <strong>{isZoomedOutForSearch ? "Zooma in" : loadingFacilities ? "Hämtar klubbar" : `${points.length} klubbar`}</strong>
           <span>{mapAreaLabel}</span>
+          {isZoomedOutForSearch ? <small>Zooma in för att visa nya klubbar i området.</small> : null}
           {facilityError ? <small>{facilityError}</small> : null}
         </div>
       ) : null}

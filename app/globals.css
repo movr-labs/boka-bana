@@ -2355,15 +2355,97 @@ a {
 }
 
 .trainer-match-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 380px;
-  gap: 34px;
+  display: block;
   padding: 44px 0 88px;
 }
 
-.trainer-panel {
+.trainer-wizard {
+  display: grid;
+  gap: 20px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.trainer-wizard-head {
+  display: grid;
+  gap: 22px;
+}
+
+.trainer-wizard-head h2 {
+  margin-bottom: 0;
+}
+
+.trainer-wizard-progress {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  border: 1px solid var(--rule);
+  background: var(--cream-warm);
+}
+
+.trainer-wizard-progress button {
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  min-width: 0;
+  border: 0;
+  border-right: 1px solid var(--rule);
+  background: transparent;
+  padding: 13px 8px;
+  color: var(--ink-mute);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+  transition: background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.trainer-wizard-progress button:last-child {
+  border-right: 0;
+}
+
+.trainer-wizard-progress button:not(:disabled):hover {
+  background: #fff;
+  color: var(--green-deep);
+  transform: translateY(-1px);
+}
+
+.trainer-wizard-progress button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.trainer-wizard-progress button.active {
+  background: #fff;
+  color: var(--green-deep);
+}
+
+.trainer-wizard-progress button[aria-current="step"] {
+  box-shadow: inset 0 -3px 0 var(--green);
+}
+
+.trainer-wizard-progress span {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.trainer-wizard-body {
+  min-height: 0;
+}
+
+.trainer-wizard-step {
   display: grid;
   gap: 24px;
+}
+
+.trainer-chip-row.large button {
+  min-width: 156px;
+  min-height: 54px;
+  font-size: 16px;
 }
 
 .trainer-step {
@@ -2415,8 +2497,9 @@ a {
   background: #fff;
   padding: 10px 13px;
   color: var(--ink-soft);
+  cursor: pointer;
   font-weight: 700;
-  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+  transition: background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, color 0.16s ease, transform 0.16s ease;
 }
 
 .trainer-chip-row button:hover,
@@ -2426,6 +2509,12 @@ a {
   border-color: rgba(26, 77, 58, 0.38);
   background: var(--cream-warm);
   color: var(--green-deep);
+}
+
+.trainer-chip-row button:hover,
+.trainer-city-row button:hover {
+  box-shadow: 0 8px 18px rgba(15, 53, 39, 0.08);
+  transform: translateY(-1px);
 }
 
 .trainer-chip-row.levels button {
@@ -2460,9 +2549,43 @@ a {
 
 .trainer-extra-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 260px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   gap: 18px;
   margin-top: 4px;
+}
+
+.trainer-extra-grid .trainer-field textarea {
+  height: 46px;
+  min-height: 46px;
+  overflow: hidden;
+  resize: none;
+}
+
+.trainer-contact-step {
+  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+  align-items: start;
+}
+
+.trainer-contact-step > .trainer-step,
+.trainer-contact-step > .trainer-confirmation,
+.trainer-contact-step > .trainer-privacy {
+  grid-column: 1 / -1;
+}
+
+.trainer-contact-grid {
+  align-self: center;
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.trainer-contact-grid label:first-child {
+  grid-column: 1 / -1;
+}
+
+.trainer-contact-step > .trainer-match-card {
+  grid-column: 2;
+  grid-row: 2;
 }
 
 .trainer-side {
@@ -2474,7 +2597,7 @@ a {
 .trainer-match-card {
   border: 1px solid rgba(28, 47, 84, 0.14);
   background: #fff;
-  padding: 26px;
+  padding: 22px;
   color: var(--ink-soft);
 }
 
@@ -2487,13 +2610,14 @@ a {
   margin: 8px 0 10px;
   color: var(--ink);
   font-family: var(--serif);
-  font-size: 30px;
+  font-size: 26px;
   font-weight: 500;
   line-height: 1.05;
 }
 
 .trainer-match-card p:not(.eyebrow) {
   margin: 0;
+  font-size: 14px;
   line-height: 1.55;
 }
 
@@ -2544,6 +2668,15 @@ a {
   align-items: center;
   gap: 7px;
   margin: 0;
+}
+
+.trainer-wizard-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--rule);
+  margin-top: 2px;
+  padding-top: 16px;
 }
 
 .checkout-action-panel {
@@ -2816,6 +2949,40 @@ a {
   .trainer-match-grid,
   .trainer-extra-grid {
     grid-template-columns: 1fr;
+  }
+
+  .trainer-wizard {
+    max-width: none;
+  }
+
+  .trainer-wizard-progress {
+    grid-template-columns: 1fr;
+  }
+
+  .trainer-wizard-progress button {
+    grid-template-columns: 26px 1fr;
+    justify-items: start;
+    border-right: 0;
+    border-bottom: 1px solid var(--rule);
+    text-align: left;
+  }
+
+  .trainer-wizard-progress button:last-child {
+    border-bottom: 0;
+  }
+
+  .trainer-contact-step {
+    grid-template-columns: 1fr;
+  }
+
+  .trainer-contact-grid {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .trainer-contact-step > .trainer-match-card {
+    grid-column: auto;
+    grid-row: auto;
   }
 
   .landing-field:nth-child(2n) {

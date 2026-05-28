@@ -15,10 +15,11 @@ export default function BokaNav({
   current,
   variant = "default",
 }: {
-  current?: "home" | "search" | "booking" | "bookings" | "login" | "tournaments";
+  current?: "home" | "search" | "booking" | "bookings" | "login" | "tournaments" | "trainers";
   variant?: "default" | "on-dark";
 }) {
   const [user, setUser] = useState<PublicUser | null>(null);
+  const logoSrc = variant === "on-dark" ? "/bb-logo-white.png?v=20260528" : "/bb-logo.png?v=20260528";
 
   useEffect(() => {
     let active = true;
@@ -44,12 +45,14 @@ export default function BokaNav({
   return (
     <header className={`top-nav ${variant === "on-dark" ? "on-dark" : ""}`}>
       <Link className="brand" href="/">
-        <Image src="/bb-logo.png" alt="" className="brand-logo" width={42} height={42} priority />
-        <span>Bokabana</span>
+        <Image src={logoSrc} alt="Bokabana" className="brand-logo" width={153} height={102} priority />
       </Link>
       <nav className="nav-links" aria-label="Huvudmeny">
         <Link className={current === "search" || current === "home" ? "active" : ""} href="/search">
           Sök bana
+        </Link>
+        <Link className={current === "trainers" ? "active" : ""} href="/tranare">
+          Sök tränare
         </Link>
         <Link className={current === "tournaments" ? "active" : ""} href="/tavlingar">
           Tävlingar

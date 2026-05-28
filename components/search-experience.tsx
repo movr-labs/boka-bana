@@ -2,8 +2,20 @@
 
 import { useEffect, useMemo, useState, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowUpRight, Calendar, CircleDot, Clock3, MapPin, MapPinned, Search, SlidersHorizontal } from "lucide-react";
+import {
+  ArrowUpRight,
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  CircleDot,
+  Clock3,
+  MapPin,
+  MapPinned,
+  Search,
+  SlidersHorizontal,
+} from "lucide-react";
 import BokaNav from "@/components/boka-nav";
 import CourtMap, { type CourtMapPoint } from "@/components/court-map";
 import { isIsoDate, normalizeSearchDate, todayISO, tomorrowISO } from "@/lib/date";
@@ -96,7 +108,11 @@ const FEATURED_CLUBS = [
     city: "Kungsbacka",
     meta: "Tennis · Matchi",
     searchQuery: "Kungsbacka Tennisklubb",
-    imageUrl: "https://static.wixstatic.com/media/d8dc73_bb2237b795f847dfb148db8644daeb23~mv2.jpg",
+    images: [
+      "/featured-clubs/kungsbacka-1.jpeg",
+      "/featured-clubs/kungsbacka-2.jpeg",
+      "/featured-clubs/kungsbacka-3.jpeg",
+    ],
     description: "En klassisk tennisklubb med både inomhusbanor och grusbanor nära Kungsmässan.",
   },
   {
@@ -104,7 +120,11 @@ const FEATURED_CLUBS = [
     city: "Gustavsberg",
     meta: "Tennis · Värmdö",
     searchQuery: "Gustavsbergs Tennisklubb",
-    imageUrl: "https://assets.matchi.se/archive/2019/05/thumb_3e1b8e56d8eaea2205392ff1aea28cf4.jpg",
+    images: [
+      "/featured-clubs/gustavsbergs-1.png",
+      "/featured-clubs/gustavsbergs-2.png",
+      "/featured-clubs/gustavsbergs-3.png",
+    ],
     description: "En av Värmdös stora tennisklubbar med inomhusbanor på Ekvallens idrottsområde.",
   },
   {
@@ -112,7 +132,11 @@ const FEATURED_CLUBS = [
     city: "Ekerö",
     meta: "Tennis · Ekebyhovshallen",
     searchQuery: "Ekerö Tennisklubb",
-    imageUrl: "https://assets.matchi.se/archive/2015/03/thumb_3d0f47550a3093e937313cce16adbb36.jpg",
+    images: [
+      "/featured-clubs/ekero-1.jpeg",
+      "/featured-clubs/ekero-2.jpeg",
+      "/featured-clubs/ekero-3.jpg",
+    ],
     description: "En aktiv klubb i Ekebyhovshallen med tennis, pickleball, squash och juniorverksamhet.",
   },
 ];
@@ -599,25 +623,11 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
 
             <div className="featured-grid">
               {FEATURED_CLUBS.map((club) => (
-                <button
-                  className="featured-card"
+                <FeaturedClubCard
+                  club={club}
                   key={club.name}
-                  onClick={() => searchForQuery(club.searchQuery)}
-                  type="button"
-                >
-                  <div className="featured-card-image" style={{ backgroundImage: `url("${club.imageUrl}")` }}>
-                    <span>{club.meta}</span>
-                  </div>
-                  <div className="featured-card-body">
-                    <p className="eyebrow">{club.city}</p>
-                    <h3>{club.name}</h3>
-                    <p>{club.description}</p>
-                    <div className="featured-card-foot">
-                      <span>Sök klubbnamn</span>
-                      <strong>Visa tider</strong>
-                    </div>
-                  </div>
-                </button>
+                  onSearch={() => searchForQuery(club.searchQuery)}
+                />
               ))}
             </div>
           </div>
@@ -712,8 +722,13 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
 
         <footer className="landing-footer">
           <div className="container">
-            <strong>Bokabana</strong>
-            <span>Sveriges samlade plats för tennis- och padelbokningar.</span>
+            <div>
+              <Image src="/bb-logo.png?v=20260528" alt="Bokabana" className="footer-logo" width={153} height={102} />
+              <span>Sveriges samlade plats för tennis- och padelbokningar.</span>
+            </div>
+            <a href="https://movrlabs.io" rel="noreferrer" target="_blank">
+              Created by Movr Labs
+            </a>
           </div>
         </footer>
       </main>
@@ -1015,6 +1030,76 @@ function LocationField({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function FeaturedClubCard({
+  club,
+  onSearch,
+}: {
+  club: (typeof FEATURED_CLUBS)[number];
+  onSearch: () => void;
+}) {
+  const [activeImage, setActiveImage] = useState(0);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setActiveImage((current) => (current + 1) % club.images.length);
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [club.images.length]);
+
+  function showPrevious() {
+    setActiveImage((current) => (current - 1 + club.images.length) % club.images.length);
+  }
+
+  function showNext() {
+    setActiveImage((current) => (current + 1) % club.images.length);
+  }
+
+  return (
+    <article className="featured-card">
+      <div className="featured-card-image" aria-label={`${club.name} bildkarusell`}>
+        {club.images.map((image, index) => (
+          <div
+            aria-hidden={index !== activeImage}
+            className={`featured-card-slide ${index === activeImage ? "active" : ""}`}
+            key={image}
+            style={{ backgroundImage: `url("${image}")` }}
+          />
+        ))}
+        <span>{club.meta}</span>
+        <button className="featured-carousel-control previous" onClick={showPrevious} type="button" aria-label="Föregående bild">
+          <ChevronLeft size={18} />
+        </button>
+        <button className="featured-carousel-control next" onClick={showNext} type="button" aria-label="Nästa bild">
+          <ChevronRight size={18} />
+        </button>
+        <div className="featured-carousel-dots" aria-label="Karusellbilder">
+          {club.images.map((image, index) => (
+            <button
+              aria-label={`Visa bild ${index + 1}`}
+              aria-pressed={index === activeImage}
+              className={index === activeImage ? "active" : ""}
+              key={image}
+              onClick={() => setActiveImage(index)}
+              type="button"
+            />
+          ))}
+        </div>
+      </div>
+      <div className="featured-card-body">
+        <p className="eyebrow">{club.city}</p>
+        <h3>{club.name}</h3>
+        <p>{club.description}</p>
+        <div className="featured-card-foot">
+          <span>Sök klubbnamn</span>
+          <button className="featured-card-action" onClick={onSearch} type="button">
+            Visa tider
+          </button>
+        </div>
+      </div>
+    </article>
   );
 }
 

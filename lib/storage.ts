@@ -11,11 +11,28 @@ export type AppUser = {
   createdAt: string;
 };
 
+export type TrainerLead = {
+  id: string;
+  createdAt: string;
+  sport: "Tennis" | "Padel";
+  city: string;
+  level: "Nybörjare" | "Motionär" | "Medel" | "Avancerad" | "Junior";
+  goal: string;
+  availability: string;
+  contact: {
+    name: string;
+    email: string;
+    phone: string;
+  };
+  matchSummary: string;
+};
+
 type DatabaseShape = {
   usersById: Record<string, AppUser>;
   userIdsByEmail: Record<string, string>;
   bookingsByUserId: Record<string, StoredBooking[]>;
   matchiCheckoutBatchesById: Record<string, MatchiStoredCheckoutBatch>;
+  trainerLeadsById: Record<string, TrainerLead>;
 };
 
 const EMPTY_DATABASE: DatabaseShape = {
@@ -23,6 +40,7 @@ const EMPTY_DATABASE: DatabaseShape = {
   userIdsByEmail: {},
   bookingsByUserId: {},
   matchiCheckoutBatchesById: {},
+  trainerLeadsById: {},
 };
 
 type Store = {
@@ -45,6 +63,7 @@ function normalizeDatabase(input: Partial<DatabaseShape> | null | undefined): Da
     userIdsByEmail: input?.userIdsByEmail ?? {},
     bookingsByUserId: input?.bookingsByUserId ?? {},
     matchiCheckoutBatchesById: input?.matchiCheckoutBatchesById ?? {},
+    trainerLeadsById: input?.trainerLeadsById ?? {},
   };
 }
 
@@ -205,6 +224,19 @@ export async function saveMatchiCheckoutBatch(batch: MatchiStoredCheckoutBatch) 
 export async function findMatchiCheckoutBatch(batchId: string) {
   const database = await getStore().read();
   return database.matchiCheckoutBatchesById[batchId] ?? null;
+}
+
+export async function saveTrainerLead(input: Omit<TrainerLead, "id" | "createdAt">) {
+  const store = getStore();
+  const database = await store.read();
+  const lead: TrainerLead = {
+    ...input,
+    id: randomUUID(),
+    createdAt: new Date().toISOString(),
+  };
+  database.trainerLeadsById[lead.id] = lead;
+  await store.write(database);
+  return lead;
 }
 
 export function publicUser(user: AppUser) {

@@ -180,28 +180,6 @@ function mapPointsForDirectory(directory: DirectoryBucket): CourtMapPoint[] {
     .slice(0, 7);
 }
 
-function mapPointsForSearchPreview(query: string, fallbackPoints: CourtMapPoint[]) {
-  const normalizedQuery = query.trim().toLowerCase();
-  if (!normalizedQuery) return fallbackPoints;
-
-  const cityName = Object.keys(CITY_COORDINATES).find((name) => {
-    const normalizedName = name.toLowerCase();
-    return normalizedName.includes(normalizedQuery) || normalizedQuery.includes(normalizedName);
-  });
-  if (!cityName) return fallbackPoints;
-
-  const coordinates = CITY_COORDINATES[cityName];
-  return [
-    {
-      id: cityName,
-      name: cityName,
-      city: "Sökområde",
-      latitude: coordinates.latitude,
-      longitude: coordinates.longitude,
-    },
-  ];
-}
-
 function clubImageBackground(imageUrl: string | null) {
   const url =
     imageUrl ||
@@ -282,6 +260,7 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
   const [duration, setDuration] = useState(searchParams.get("duration") || "60");
   const [offset, setOffset] = useState(Number(searchParams.get("offset") || 0));
   const [filters, setFilters] = useState<Filters>(() => filtersFromSearchParams(searchParams));
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [data, setData] = useState<AvailabilityResponse | null>(null);
   const [directorySummary, setDirectorySummary] = useState<DirectorySummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -374,10 +353,6 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
   const canPageForward = Boolean(data && data.offset + data.limit < totalResults);
   const directory = useMemo(() => directoryForSport(directorySummary, sportId), [directorySummary, sportId]);
   const landingMapPoints = useMemo(() => mapPointsForDirectory(directory), [directory]);
-  const searchMapPreviewPoints = useMemo(
-    () => mapPointsForSearchPreview(location || submittedQuery, landingMapPoints),
-    [landingMapPoints, location, submittedQuery],
-  );
 
   function updateFilter<K extends keyof Filters>(key: K, value: Filters[K]) {
     setFilters((current) => ({ ...current, [key]: value }));
@@ -769,7 +744,7 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
       ) : (
         <section className="compact-search">
           <div className="container search-row">
-            <div className="sport-toggle" aria-label="Sport">
+            <div className="sport-toggle search-sport-toggle" aria-label="Sport">
               <button className={sportId === "1" ? "selected" : ""} onClick={() => updateSport("1")} type="button">
                 Tennis
               </button>
@@ -791,30 +766,37 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
                 <Calendar size={17} />
                 <input min={todayISO()} type="date" value={date} onChange={(event) => updateDate(event.target.value)} />
               </div>
+              <button className="search-map-button" onClick={openMapView} type="button">
+                <MapPinned size={16} />
+                <span>Karta</span>
+              </button>
             </div>
             <button className="btn small" onClick={submitSearch}>
               Sök igen
+            </button>
+            <button
+              aria-expanded={mobileFiltersOpen}
+              className={`mobile-filter-toggle ${mobileFiltersOpen ? "active" : ""}`}
+              onClick={() => setMobileFiltersOpen((open) => !open)}
+              type="button"
+            >
+              <SlidersHorizontal size={15} />
+              Filter
             </button>
           </div>
         </section>
       )}
 
       <section className="container results-wrap">
-        <aside className="filters">
-          <section className="map-filter-card" aria-label="Kartvy">
-            <div className="map-filter-map">
-              <CourtMap points={searchMapPreviewPoints} variant="preview" />
-            </div>
-            <span className="map-filter-body">
-              <span className="eyebrow">Kartvy</span>
-              <strong>Se klubbarna på kartan</strong>
-              <small>{location.trim() || submittedQuery || "Valt område"}</small>
-            </span>
-            <button className="map-filter-action" onClick={openMapView} type="button">
-              <MapPinned size={15} />
-              Öppna
+        <aside className={`filters ${mobileFiltersOpen ? "open" : ""}`}>
+          <div className="sport-toggle filters-sport-toggle" aria-label="Sport">
+            <button className={sportId === "1" ? "selected" : ""} onClick={() => updateSport("1")} type="button">
+              Tennis
             </button>
-          </section>
+            <button className={sportId === "5" ? "selected" : ""} onClick={() => updateSport("5")} type="button">
+              Padel
+            </button>
+          </div>
           <div className="eyebrow">Förfina</div>
           <FilterBlock title="Underlag">
             <RadioOption label="Alla" active={filters.surface === "any"} onClick={() => updateFilter("surface", "any")} />

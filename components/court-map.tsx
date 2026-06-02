@@ -88,15 +88,26 @@ export default function CourtMap({
     const node = mapRef.current;
     if (!node) return;
 
+    const suppressTileError = (event: Event) => {
+      if (event.target instanceof HTMLImageElement && event.target.classList.contains("court-map-tile")) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    };
+
     const updateSize = () => {
       const rect = node.getBoundingClientRect();
       setSize({ width: rect.width, height: rect.height });
     };
 
     updateSize();
+    window.addEventListener("error", suppressTileError, true);
     const observer = new ResizeObserver(updateSize);
     observer.observe(node);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("error", suppressTileError, true);
+    };
   }, []);
 
   const visiblePoints = useMemo(
@@ -135,7 +146,12 @@ export default function CourtMap({
       startClientY: event.clientY,
       startCenter: view.center,
     };
-    event.currentTarget.setPointerCapture(event.pointerId);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      dragRef.current = null;
+      return;
+    }
     setDragging(true);
   }
 
@@ -196,6 +212,12 @@ export default function CourtMap({
             className="court-map-tile"
             draggable={false}
             key={`${tile.zoom}:${tile.x}:${tile.y}`}
+            onError={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              event.nativeEvent.stopImmediatePropagation();
+              event.currentTarget.style.opacity = "0";
+            }}
             src={tile.url}
             style={{ left: tile.left, top: tile.top }}
           />
@@ -218,7 +240,7 @@ export default function CourtMap({
               {variant === "full" ? (
                 <span className="court-map-marker-label">
                   <strong>{point.name}</strong>
-                  <span>{point.optionsCount != null ? `${point.optionsCount} tider` : point.city ?? ""}</span>
+                  <span>{point.firstTime ? `Nästa ${point.firstTime}` : point.optionsCount != null ? `${point.optionsCount} tider` : point.city ?? ""}</span>
                 </span>
               ) : null}
             </button>

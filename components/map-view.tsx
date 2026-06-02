@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { MapPin, X } from "lucide-react";
+import { ArrowUpRight, Clock3, MapPin, X } from "lucide-react";
 import CourtMap, { type CourtMapPoint, type CourtMapViewport } from "@/components/court-map";
-import { normalizeSearchDate, todayISO, tomorrowISO } from "@/lib/date";
+import { normalizeSearchDate, tomorrowISO } from "@/lib/date";
 import type {
   AvailabilityResponse,
   MatchiAvailabilityOption,
@@ -49,9 +49,9 @@ export default function MapView() {
     initialLatitude != null && initialLongitude != null ? { latitude: initialLatitude, longitude: initialLongitude } : null;
   const initialLocation = searchParams.get("location") || (initialCoordinates ? "Min plats" : "");
   const sportId: SportId = searchParams.get("sport") === "5" ? "5" : "1";
-  const [selectedDate, setSelectedDate] = useState(initialDate);
-  const [selectedTime, setSelectedTime] = useState(searchParams.get("time") || "18:00");
-  const [duration, setDuration] = useState(searchParams.get("duration") || "60");
+  const [selectedDate] = useState(initialDate);
+  const [selectedTime] = useState(searchParams.get("time") || "18:00");
+  const [duration] = useState(searchParams.get("duration") || "60");
   const [facilitiesByKey, setFacilitiesByKey] = useState<Map<string, MatchiFacilitySummary>>(() => new Map());
   const [availabilityData, setAvailabilityData] = useState<AvailabilityResponse | null>(null);
   const [activeFacilityRequests, setActiveFacilityRequests] = useState(0);
@@ -251,15 +251,22 @@ export default function MapView() {
     return () => controller.abort();
   }, [selectedDate, selectedFacility, sportId]);
 
-  const selectedOptions = useMemo(() => {
-    return (availabilityData?.options ?? []).filter((option) => matchesSelectedTime(option, selectedTime, duration));
-  }, [availabilityData, duration, selectedTime]);
+  const selectedFacilityOptions = useMemo(() => sortAvailabilityOptions(availabilityData?.options ?? []), [availabilityData]);
+
+  const nextAvailableOption = useMemo(() => {
+    return findNextAvailableOption(selectedFacilityOptions, selectedTime);
+  }, [selectedFacilityOptions, selectedTime]);
+
+  const quickOptions = useMemo(() => {
+    const from = parseTimeMinutes(selectedTime);
+    return selectedFacilityOptions.filter((option) => parseTimeMinutes(option.start) >= from);
+  }, [selectedFacilityOptions, selectedTime]);
 
   const points = useMemo<CourtMapPoint[]>(() => {
     return facilities
-      .map((facility) => toMapPoint(facility, selectedFacility?.slug === facility.slug ? selectedOptions : []))
+      .map((facility) => toMapPoint(facility, selectedFacility?.slug === facility.slug ? selectedFacilityOptions : []))
       .filter((point): point is CourtMapPoint => point != null);
-  }, [facilities, selectedFacility, selectedOptions]);
+  }, [facilities, selectedFacility, selectedFacilityOptions]);
 
   const updateViewport = useCallback((nextViewport: CourtMapViewport) => {
     setViewport(nextViewport);
@@ -329,37 +336,58 @@ export default function MapView() {
             </div>
           </div>
 
-          <div className="map-time-form">
-            <label>
-              <span>Datum</span>
-              <input min={todayISO()} type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
-            </label>
-            <label>
-              <span>Tid</span>
-              <input type="time" value={selectedTime} onChange={(event) => setSelectedTime(event.target.value)} />
-            </label>
-            <label>
-              <span>Längd</span>
-              <select value={duration} onChange={(event) => setDuration(event.target.value)}>
-                <option value="60">60 min</option>
-                <option value="90">90 min</option>
-                <option value="120">120 min</option>
-              </select>
-            </label>
+          <div className="map-next-slot">
+            <span className="map-next-icon" aria-hidden="true">
+              <Clock3 size={18} />
+            </span>
+            <div className="map-next-slot-main">
+              <p className="eyebrow">Nästa lediga tid</p>
+              {loadingAvailability ? (
+                <strong>Hämtar tider</strong>
+              ) : nextAvailableOption ? (
+                <>
+                  <strong>{nextAvailableOption.start}</strong>
+                  <span>
+                    {nextAvailableOption.courtName} · {nextAvailableOption.end} · {nextAvailableOption.mockPrice} kr
+                  </span>
+                </>
+              ) : (
+                <>
+                  <strong>Inga tider</strong>
+                  <span>Testa annat datum eller öppna klubbsidan.</span>
+                </>
+              )}
+            </div>
+            {nextAvailableOption ? (
+              <button className="map-next-book" onClick={() => router.push(toBookingQuery(nextAvailableOption))} type="button">
+                Boka
+              </button>
+            ) : null}
           </div>
+
+          <button
+            className="btn small full map-club-link"
+            onClick={() => router.push(toClubQuery(selectedFacility, selectedDate, sportId))}
+            type="button"
+          >
+            <ArrowUpRight size={15} />
+            Visa alla tider
+          </button>
 
           {availabilityError ? <div className="notice error">{availabilityError}</div> : null}
 
           <p className="map-count">
             {loadingAvailability
               ? "Hämtar bantider"
-              : selectedOptions.length
-                ? `${selectedOptions.length} lediga tider`
-                : "Inga lediga tider för vald tid"}
+              : quickOptions.length
+                ? `${quickOptions.length} kommande tider`
+                : selectedFacilityOptions.length
+                  ? `${selectedFacilityOptions.length} tider tidigare idag`
+                  : "Inga lediga tider"}
           </p>
 
           <div className="map-slot-list">
-            {selectedOptions.slice(0, 8).map((slot) => (
+            {(quickOptions.length ? quickOptions : selectedFacilityOptions).slice(0, 8).map((slot) => (
               <button className="map-slot-button" key={slot.slotId} onClick={() => router.push(toBookingQuery(slot))} type="button">
                 <span>{slot.start}</span>
                 <strong>{slot.courtName}</strong>
@@ -499,11 +527,18 @@ function toMapPoint(facility: MatchiFacilitySummary, options: MatchiAvailability
   };
 }
 
-function matchesSelectedTime(option: MatchiAvailabilityOption, time: string, duration: string) {
-  const start = parseTimeMinutes(option.start);
+function sortAvailabilityOptions(options: MatchiAvailabilityOption[]) {
+  return [...options].sort((left, right) => {
+    const dateOrder = left.date.localeCompare(right.date);
+    if (dateOrder !== 0) return dateOrder;
+    return parseTimeMinutes(left.start) - parseTimeMinutes(right.start);
+  });
+}
+
+function findNextAvailableOption(options: MatchiAvailabilityOption[], time: string) {
+  if (!options.length) return null;
   const from = parseTimeMinutes(time);
-  const durationMinutes = Math.max(30, Number(duration) || 60);
-  return start >= from && start < from + durationMinutes;
+  return options.find((option) => parseTimeMinutes(option.start) >= from) ?? options[0];
 }
 
 function parseTimeMinutes(value: string) {
@@ -512,6 +547,14 @@ function parseTimeMinutes(value: string) {
   const hours = Number(match[1] ?? 0);
   const minutes = Number(match[2] ?? 0);
   return hours * 60 + minutes;
+}
+
+function toClubQuery(facility: MatchiFacilitySummary, date: string, sportId: SportId) {
+  const search = new URLSearchParams({
+    date,
+    sport: sportId,
+  });
+  return `/clubs/${encodeURIComponent(facility.slug)}?${search.toString()}`;
 }
 
 function toBookingQuery(option: MatchiAvailabilityOption) {

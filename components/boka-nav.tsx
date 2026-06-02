@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { CalendarDays, Dumbbell, LogOut, Search, Trophy, UserRound } from "lucide-react";
+import { CalendarDays, LogOut, Search, Trophy, UserRound } from "lucide-react";
 
 type PublicUser = {
   id: string;
@@ -19,7 +19,10 @@ export default function BokaNav({
   variant?: "default" | "on-dark";
 }) {
   const [user, setUser] = useState<PublicUser | null>(null);
-  const logoSrc = variant === "on-dark" ? "/bb-logo-white.png?v=20260528" : "/bb-logo.png?v=20260528";
+  const logoSrc =
+    variant === "on-dark"
+      ? "/loga_utan_text/boka_bana_transparent.png?v=20260602"
+      : "/loga_utan_text/boka_bana_transparent.png?v=20260602";
   const searchActive = current === "search" || current === "home";
 
   useEffect(() => {
@@ -46,7 +49,8 @@ export default function BokaNav({
   return (
     <header className={`top-nav ${variant === "on-dark" ? "on-dark" : ""}`}>
       <Link className="brand" href="/">
-        <Image src={logoSrc} alt="Bokabana" className="brand-logo" width={153} height={102} priority />
+        <Image src={logoSrc} alt="Bokabana" className="brand-logo" width={1536} height={1024} priority />
+        <span className="brand-wordmark">BOKABANA.SE</span>
       </Link>
       <nav className="nav-links" aria-label="Huvudmeny">
         <Link
@@ -62,7 +66,7 @@ export default function BokaNav({
           href="/tranare"
           aria-current={current === "trainers" ? "page" : undefined}
         >
-          <Dumbbell size={16} />
+          <UserRound size={16} />
           <span>Sök tränare</span>
         </Link>
         <Link

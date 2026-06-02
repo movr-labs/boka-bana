@@ -698,7 +698,13 @@ export default function SearchExperience({ home = false }: { home?: boolean }) {
         <footer className="landing-footer">
           <div className="container">
             <div>
-              <Image src="/bb-logo.png?v=20260528" alt="Bokabana" className="footer-logo" width={153} height={102} />
+              <Image
+                src="/loga_utan_text/boka_bana_transparent.png?v=20260602"
+                alt="Bokabana"
+                className="footer-logo"
+                width={1536}
+                height={1024}
+              />
               <span>Sveriges samlade plats för tennis- och padelbokningar.</span>
             </div>
             <a href="https://movrlabs.io" rel="noreferrer" target="_blank">

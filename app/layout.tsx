@@ -6,9 +6,9 @@ export const metadata: Metadata = {
   title: "Bokabana - Tennis & padel i Sverige",
   description: "Sok och boka lediga banor med realtider fran Matchi.",
   icons: {
-    icon: "/bb-logo.png?v=20260528",
-    shortcut: "/bb-logo.png?v=20260528",
-    apple: "/bb-logo.png?v=20260528",
+    icon: "/loga_utan_text/boka_bana_transparent.png?v=20260602",
+    shortcut: "/loga_utan_text/boka_bana_transparent.png?v=20260602",
+    apple: "/loga_utan_text/boka_bana_transparent.png?v=20260602",
   },
 };
 

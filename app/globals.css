@@ -90,14 +90,30 @@ a {
 .brand {
   display: inline-flex;
   align-items: center;
+  gap: 10px;
   line-height: 1;
 }
 
 .brand-logo {
-  width: 132px;
-  height: 58px;
+  width: 128px;
+  height: 82px;
+  margin: -10px 0;
   object-fit: contain;
   display: block;
+}
+
+.brand-wordmark {
+  display: inline-flex;
+  align-items: center;
+  margin-left: -34px;
+  transform: translateY(-6px);
+  color: var(--green-deep);
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .nav-links {
@@ -157,6 +173,14 @@ a {
 .top-nav.on-dark .nav-links,
 .top-nav.on-dark .nav-user,
 .top-nav.on-dark .nav-links a.active {
+  color: #fff;
+}
+
+.top-nav.on-dark .brand-logo {
+  filter: brightness(0) invert(1);
+}
+
+.top-nav.on-dark .brand-wordmark {
   color: #fff;
 }
 
@@ -429,14 +453,18 @@ a {
 .landing-search-wrap {
   position: relative;
   z-index: 4;
+  width: min(max(1180px, 40vw), calc(100% - 48px));
   margin-top: clamp(24px, 3vw, 42px);
 }
 
 .landing-search-panel {
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--rule);
   background: var(--paper);
   color: var(--ink);
-  padding: 28px 32px 32px;
+  min-height: max(360px, 40vh);
+  padding: clamp(28px, 2vw, 44px) clamp(32px, 2.4vw, 56px) clamp(32px, 2.4vw, 56px);
   box-shadow: 0 24px 70px -32px rgba(0, 0, 0, 0.42);
 }
 
@@ -506,6 +534,7 @@ a {
 
 .landing-map-teaser {
   position: relative;
+  flex: 1;
   margin-top: 18px;
   overflow: hidden;
   border: 1px solid var(--rule);
@@ -513,8 +542,8 @@ a {
 }
 
 .landing-map-teaser .court-map {
-  height: 176px;
-  min-height: 176px;
+  height: 100%;
+  min-height: clamp(176px, 18vh, 360px);
 }
 
 .landing-map-overlay {
@@ -1619,7 +1648,7 @@ a {
 
 .footer-logo {
   display: block;
-  width: 132px;
+  width: 88px;
   height: 58px;
   object-fit: contain;
 }
@@ -2980,6 +3009,14 @@ a {
 
   .landing-hero {
     min-height: 680px;
+  }
+
+  .landing-search-panel {
+    min-height: auto;
+  }
+
+  .landing-map-teaser {
+    flex: none;
   }
 
   .landing-search-grid {

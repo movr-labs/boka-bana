@@ -62,7 +62,11 @@ type DragState = {
 };
 
 const TILE_SIZE = 256;
-const TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+const MAPTILER_API_KEY = process.env.NEXT_PUBLIC_MAPTILER_API_KEY?.trim();
+const TILE_URL = MAPTILER_API_KEY
+  ? `https://api.maptiler.com/maps/streets-v4/256/{z}/{x}/{y}.png?key=${encodeURIComponent(MAPTILER_API_KEY)}`
+  : "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+const MAP_STYLE = MAPTILER_API_KEY ? "maptiler-streets" : "osm-fallback";
 const FALLBACK_CENTER = { latitude: 59.3293, longitude: 18.0686 };
 const MIN_ZOOM = 4;
 const MAX_ZOOM = 17;
@@ -196,7 +200,7 @@ export default function CourtMap({
   return (
     <div
       ref={mapRef}
-      className={`court-map ${variant} ${dragging ? "dragging" : ""} ${className}`}
+      className={`court-map ${variant} ${MAP_STYLE} ${dragging ? "dragging" : ""} ${className}`}
       aria-label="Karta över lediga banor"
       onLostPointerCapture={endDrag}
       onPointerCancel={endDrag}
@@ -260,7 +264,16 @@ export default function CourtMap({
       </div>
 
       <div className="court-map-attribution">
-        © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors
+        {MAPTILER_API_KEY ? (
+          <>
+            © <a href="https://www.maptiler.com/copyright/">MapTiler</a> ©{" "}
+            <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors
+          </>
+        ) : (
+          <>
+            © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors
+          </>
+        )}
       </div>
     </div>
   );

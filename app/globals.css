@@ -607,6 +607,10 @@ a {
   filter: grayscale(0.2) sepia(0.08) saturate(0.64) brightness(1.05) contrast(0.88);
 }
 
+.court-map.maptiler-streets .court-map-tile {
+  filter: none;
+}
+
 .court-map::after {
   content: "";
   position: absolute;
